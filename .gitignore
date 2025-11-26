@@ -1,0 +1,40 @@
+# ================================
+# Python / FastAPI
+# ================================
+
+*.pth
+
+# Environnements virtuels
+venv/
+.env
+*.env
+*.local.env
+
+# caches
+__pycache__/
+*.py[cod]
+*.pyo
+
+# logs
+*.log
+
+# Compilations
+*.so
+*.dll
+
+# Outils Python
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# VSCode
+.vscode/
+
+# PyCharm
+.idea/
+
+# Docker
+*~ 
+.build/
+dist/

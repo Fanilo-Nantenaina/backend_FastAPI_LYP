@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+opencv-python
+numpy
+python-multipart
+ultralytics
+easyocr
+paddleocr
+segment-anything
+python-dotenv
+google-genai

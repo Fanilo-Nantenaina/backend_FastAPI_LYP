@@ -1,0 +1,102 @@
+{
+  "courgette": {
+    "quantity": 14,
+    "category": "légumes",
+    "expiry_date": "2025-12-01T15:40:09.287378",
+    "expiry_days": 7,
+    "added_date": "2025-11-24T15:40:09.287378",
+    "last_updated": "2025-11-24T17:50:48.430333",
+    "detection_method": "ai",
+    "texture": "soft"
+  },
+  "chou": {
+    "quantity": 10,
+    "category": "légumes",
+    "expiry_date": "2025-12-08T15:40:09.287378",
+    "expiry_days": 14,
+    "added_date": "2025-11-24T15:40:09.287378",
+    "last_updated": "2025-11-24T17:50:48.430333",
+    "detection_method": "ai",
+    "texture": "firm"
+  },
+  "carotte": {
+    "quantity": 32,
+    "category": "légumes",
+    "expiry_date": "2025-12-15T15:40:09.288906",
+    "expiry_days": 21,
+    "added_date": "2025-11-24T15:40:09.288906",
+    "last_updated": "2025-11-24T17:50:48.429282",
+    "detection_method": "ai",
+    "texture": "firm"
+  },
+  "banane": {
+    "quantity": 1,
+    "category": "fruits",
+    "expiry_date": "2025-12-01T15:40:09.288906",
+    "expiry_days": 7,
+    "added_date": "2025-11-24T15:40:09.288906",
+    "last_updated": "2025-11-24T15:40:09.288906",
+    "detection_method": "ai",
+    "texture": "soft"
+  },
+  "poivron": {
+    "quantity": 83,
+    "category": "légumes",
+    "expiry_date": "2025-12-04T16:05:15.234303",
+    "expiry_days": 10,
+    "added_date": "2025-11-24T16:05:15.234303",
+    "last_updated": "2025-11-24T17:50:48.428282",
+    "detection_method": "ai",
+    "texture": "firm"
+  },
+  "tomate": {
+    "quantity": 13,
+    "category": "légumes",
+    "expiry_date": "2025-12-01T16:05:15.236317",
+    "expiry_days": 7,
+    "added_date": "2025-11-24T16:05:15.236317",
+    "last_updated": "2025-11-24T17:50:48.430333",
+    "detection_method": "ai",
+    "texture": "soft"
+  },
+  "tomate cerise": {
+    "quantity": 16,
+    "category": "légumes",
+    "expiry_date": "2025-11-29T17:45:07.881958",
+    "expiry_days": 5,
+    "added_date": "2025-11-24T17:45:07.881958",
+    "last_updated": "2025-11-24T17:50:48.429282",
+    "detection_method": "ai",
+    "texture": "very_soft"
+  },
+  "oignon rouge": {
+    "quantity": 4,
+    "category": "légumes",
+    "expiry_date": "2025-12-24T17:47:42.516361",
+    "expiry_days": 30,
+    "added_date": "2025-11-24T17:47:42.516361",
+    "last_updated": "2025-11-24T17:50:48.430333",
+    "detection_method": "ai",
+    "texture": "firm"
+  },
+  "pomme": {
+    "quantity": 2,
+    "category": "fruits",
+    "expiry_date": "2025-12-15T17:47:42.517870",
+    "expiry_days": 21,
+    "added_date": "2025-11-24T17:47:42.517870",
+    "last_updated": "2025-11-24T17:50:48.431837",
+    "detection_method": "ai",
+    "texture": "firm"
+  },
+  "jambon": {
+    "quantity": 2,
+    "category": "charcuterie",
+    "expiry_date": "2025-11-29T17:47:42.517870",
+    "expiry_days": 5,
+    "added_date": "2025-11-24T17:47:42.517870",
+    "last_updated": "2025-11-24T17:50:48.431837",
+    "detection_method": "ai",
+    "texture": "soft"
+  }
+}
