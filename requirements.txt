@@ -1,11 +1,38 @@
+# FastAPI & Server
 fastapi
-uvicorn
-opencv-python
-numpy
+uvicorn[standard]
 python-multipart
-ultralytics
-easyocr
-paddleocr
-segment-anything
-python-dotenv
+
+# Database
+sqlalchemy
+psycopg2-binary
+alembic
+
+# Pydantic
+pydantic
+pydantic-settings
+
+# Security & Auth
+python-jose[cryptography]
+passlib[bcrypt]
+bcrypt
+
+# Google Gemini
 google-genai
+
+# Image Processing
+Pillow
+
+# Scheduler
+APScheduler
+
+# Utils
+python-dotenv
+
+# Redis (pour cache & tasks avancées)
+redis
+
+# Testing
+pytest
+pytest-asyncio
+httpx
