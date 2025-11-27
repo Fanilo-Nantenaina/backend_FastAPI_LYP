@@ -78,10 +78,10 @@ async def update_fridge(
     if request.location is not None:
         fridge.location = request.location
     if request.config is not None:
-        fridge.config = request.config  # Complète la ligne de code.
+        fridge.config = request.config
 
-    db.commit()  # Commit les modifications à la base de données.
-    db.refresh(fridge)  # Actualise l'objet pour refléter les changements.
+    db.commit()
+    db.refresh(fridge)
     return fridge
 
 
