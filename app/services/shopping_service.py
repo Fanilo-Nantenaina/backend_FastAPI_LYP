@@ -1,12 +1,10 @@
-# ==========================================
-# app/services/shopping_service.py (VERSION COMPLÈTE)
-# ==========================================
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime, timedelta
 import logging
 
+from app.middleware.transaction_handler import transactional
 from app.models.shopping_list import ShoppingList, ShoppingListItem
 from app.models.recipe import Recipe, RecipeIngredient
 from app.models.inventory import InventoryItem
@@ -29,10 +27,7 @@ class ShoppingService:
     def __init__(self, db: Session):
         self.db = db
 
-    # ==========================================
-    # CU4: GÉNÉRATION DE LISTE DE COURSES
-    # ==========================================
-
+    @transactional
     def generate_shopping_list(
         self,
         user_id: int,
@@ -54,7 +49,6 @@ class ShoppingService:
         """
         logger.info(f"Generating shopping list for fridge {fridge_id}")
 
-        # Créer la liste
         shopping_list = ShoppingList(
             user_id=user_id,
             fridge_id=fridge_id,
@@ -63,26 +57,22 @@ class ShoppingService:
         self.db.add(shopping_list)
         self.db.flush()
 
-        items_dict = {}  # product_id -> item_data
+        items_dict = {}
 
-        # 1. Si des recettes sont spécifiées
         if recipe_ids:
             recipe_items = self._generate_from_recipes(fridge_id, recipe_ids)
             for item in recipe_items:
                 self._merge_item(items_dict, item)
 
-        # 2. Ajouter les suggestions IA
         if include_suggestions:
             suggestion_items = self._generate_smart_suggestions(fridge_id, user_id)
             for item in suggestion_items:
                 self._merge_item(items_dict, item)
 
-        # 3. Ajouter les produits fréquemment achetés manquants
         frequent_items = self._suggest_frequent_missing_items(fridge_id)
         for item in frequent_items:
             self._merge_item(items_dict, item)
 
-        # 4. Créer les ShoppingListItem dans la DB
         for product_id, item_data in items_dict.items():
             item = ShoppingListItem(
                 shopping_list_id=shopping_list.id,
@@ -93,7 +83,7 @@ class ShoppingService:
             )
             self.db.add(item)
 
-        self.db.commit()
+        # self.db.commit()
         self.db.refresh(shopping_list)
 
         logger.info(
@@ -108,7 +98,6 @@ class ShoppingService:
         product_id = item_data["product_id"]
 
         if product_id in items_dict:
-            # Cumuler les quantités
             items_dict[product_id]["quantity"] += item_data["quantity"]
         else:
             items_dict[product_id] = item_data
@@ -122,7 +111,6 @@ class ShoppingService:
         """
         logger.info(f"Generating items from {len(recipe_ids)} recipes")
 
-        # Récupérer l'inventaire actuel
         inventory = (
             self.db.query(InventoryItem)
             .filter(InventoryItem.fridge_id == fridge_id, InventoryItem.quantity > 0)
@@ -134,14 +122,12 @@ class ShoppingService:
             for item in inventory
         }
 
-        # Récupérer tous les ingrédients des recettes
         ingredients = (
             self.db.query(RecipeIngredient)
             .filter(RecipeIngredient.recipe_id.in_(recipe_ids))
             .all()
         )
 
-        # Grouper par produit et cumuler les quantités nécessaires
         required_products = {}
         for ingredient in ingredients:
             if ingredient.product_id in required_products:
@@ -154,14 +140,12 @@ class ShoppingService:
                     "unit": ingredient.unit,
                 }
 
-        # Calculer ce qu'il manque (RG15)
         shopping_items = []
 
         for product_id, required in required_products.items():
             available = available_products.get(product_id, {})
             available_qty = available.get("quantity", 0)
 
-            # RG15: Ajouter seulement si quantité insuffisante
             if available_qty < required["quantity"]:
                 needed_qty = required["quantity"] - available_qty
 
@@ -190,10 +174,8 @@ class ShoppingService:
 
         suggestions = []
 
-        # 1. Produits souvent consommés mais actuellement absents
         consumed_products = self._get_frequently_consumed_products(fridge_id)
 
-        # 2. Récupérer l'inventaire actuel
         current_inventory = (
             self.db.query(InventoryItem.product_id)
             .filter(InventoryItem.fridge_id == fridge_id, InventoryItem.quantity > 0)
@@ -201,8 +183,7 @@ class ShoppingService:
         )
         current_product_ids = {item.product_id for item in current_inventory}
 
-        # 3. Suggérer les produits manquants
-        for product_data in consumed_products[:10]:  # Top 10
+        for product_data in consumed_products[:10]:
             product_id = product_data["product_id"]
 
             if product_id not in current_product_ids:
@@ -211,7 +192,6 @@ class ShoppingService:
                 )
 
                 if product:
-                    # Estimer la quantité basée sur la consommation moyenne
                     avg_quantity = product_data.get("avg_quantity", 1.0)
 
                     suggestions.append(
@@ -235,7 +215,6 @@ class ShoppingService:
         """
         cutoff_date = datetime.utcnow() - timedelta(days=days)
 
-        # Récupérer les événements de consommation
         events = (
             self.db.query(Event)
             .filter(
@@ -246,13 +225,11 @@ class ShoppingService:
             .all()
         )
 
-        # Compter les occurrences par produit
         product_consumption = {}
 
         for event in events:
             payload = event.payload or {}
 
-            # Récupérer le product_id depuis l'inventory_item
             if event.inventory_item_id:
                 item = (
                     self.db.query(InventoryItem)
@@ -272,11 +249,9 @@ class ShoppingService:
 
                     product_consumption[product_id]["count"] += 1
 
-                    # Ajouter la quantité consommée
                     consumed = payload.get("quantity_consumed", 0)
                     product_consumption[product_id]["total_quantity"] += consumed
 
-        # Calculer les moyennes et trier par fréquence
         result = []
         for data in product_consumption.values():
             avg_quantity = (
@@ -291,7 +266,6 @@ class ShoppingService:
                 }
             )
 
-        # Trier par fréquence décroissante
         result.sort(key=lambda x: x["frequency"], reverse=True)
 
         return result
@@ -301,7 +275,6 @@ class ShoppingService:
         Suggère les produits qui sont fréquemment ajoutés au frigo
         mais actuellement absents (produits de base)
         """
-        # Récupérer les produits les plus ajoutés historiquement
         from sqlalchemy import Integer, cast
 
         top_products = (
@@ -316,7 +289,6 @@ class ShoppingService:
             .all()
         )
 
-        # Récupérer l'inventaire actuel
         current_inventory = (
             self.db.query(InventoryItem.product_id)
             .filter(InventoryItem.fridge_id == fridge_id, InventoryItem.quantity > 0)
@@ -344,10 +316,7 @@ class ShoppingService:
 
         return suggestions
 
-    # ==========================================
-    # GESTION DES LISTES EXISTANTES
-    # ==========================================
-
+    @transactional
     def add_item_to_list(
         self, shopping_list_id: int, product_id: int, quantity: float, unit: str
     ) -> ShoppingListItem:
@@ -361,11 +330,12 @@ class ShoppingService:
         )
 
         self.db.add(item)
-        self.db.commit()
+        # self.db.commit()
         self.db.refresh(item)
 
         return item
 
+    @transactional
     def update_item_status(
         self, item_id: int, status: str
     ) -> Optional[ShoppingListItem]:
@@ -378,11 +348,12 @@ class ShoppingService:
 
         if item:
             item.status = status
-            self.db.commit()
+            # self.db.commit()
             self.db.refresh(item)
 
         return item
 
+    @transactional
     def mark_list_as_completed(self, shopping_list_id: int) -> Tuple[int, int]:
         """
         Marque tous les items pending comme purchased
@@ -402,12 +373,8 @@ class ShoppingService:
                 item.status = "purchased"
                 updated_count += 1
 
-        self.db.commit()
+        # self.db.commit()
         return updated_count, len(items)
-
-    # ==========================================
-    # OPTIMISATIONS ET SUGGESTIONS
-    # ==========================================
 
     def optimize_shopping_list(self, shopping_list_id: int) -> Dict[str, Any]:
         """
@@ -422,7 +389,6 @@ class ShoppingService:
             .all()
         )
 
-        # Grouper par catégorie
         by_category = {}
         for item in items:
             product = (
@@ -463,7 +429,6 @@ class ShoppingService:
         if not original:
             return []
 
-        # Rechercher des produits similaires
         query = self.db.query(Product).filter(
             Product.id != product_id, Product.category == original.category
         )
@@ -471,15 +436,10 @@ class ShoppingService:
         alternatives = query.limit(limit).all()
         return alternatives
 
-    # ==========================================
-    # STATISTIQUES
-    # ==========================================
-
     def get_shopping_statistics(self, user_id: int, days: int = 30) -> Dict[str, Any]:
         """Génère des statistiques sur les habitudes d'achat"""
         cutoff_date = datetime.utcnow() - timedelta(days=days)
 
-        # Nombre de listes créées
         lists_count = (
             self.db.query(ShoppingList)
             .filter(
@@ -488,7 +448,6 @@ class ShoppingService:
             .count()
         )
 
-        # Total d'items achetés
         purchased_items = (
             self.db.query(ShoppingListItem)
             .join(ShoppingList)
@@ -500,7 +459,6 @@ class ShoppingService:
             .count()
         )
 
-        # Produits les plus achetés
         top_products = (
             self.db.query(Product.name, func.count(ShoppingListItem.id).label("count"))
             .join(ShoppingListItem)

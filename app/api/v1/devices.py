@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
-
+from datetime import datetime
 from app.core.database import get_db
 from app.core.dependencies import get_user_fridge, get_current_user
 from app.models.fridge import Fridge
@@ -18,17 +18,17 @@ router = APIRouter(prefix="/fridges/{fridge_id}/devices", tags=["Device Pairing"
 
 
 @router.post("/generate-code", response_model=PairingCodeResponse)
-async def generate_pairing_code(
+def generate_pairing_code(
     fridge: Fridge = Depends(get_user_fridge),
     db: Session = Depends(get_db),
     device_type: str = "kiosk",
 ):
     """
-    Génère un code de jumelage pour le S22 Ultra (kiosque)
+    Génère un code de jumelage
 
     Utilisation :
-    1. L'utilisateur lance cette requête depuis le S22 configuré comme frigo
-    2. Un code à 6 chiffres s'affiche sur l'écran du S22
+    1. L'utilisateur lance cette requête depuis le Smartphone configuré comme frigo
+    2. Un code à 6 chiffres s'affiche sur l'écran du Smartphone
     3. L'utilisateur peut maintenant jumeler son téléphone avec ce code
     """
     device_service = DeviceService(db)
@@ -46,13 +46,13 @@ async def generate_pairing_code(
 
 
 @router.post("/pair", response_model=PairingResponse)
-async def pair_mobile_device(request: PairingRequest, db: Session = Depends(get_db)):
+def pair_mobile_device(request: PairingRequest, db: Session = Depends(get_db)):
     """
     Jumelle un téléphone mobile avec le code de jumelage
 
     Utilisation :
     1. L'utilisateur ouvre l'app mobile
-    2. Il entre le code à 6 chiffres affiché sur le S22
+    2. Il entre le code à 6 chiffres affiché sur le Smartphone configuré comme frigo
     3. Le téléphone se connecte au frigo
     """
     device_service = DeviceService(db)
@@ -72,7 +72,7 @@ async def pair_mobile_device(request: PairingRequest, db: Session = Depends(get_
 
 
 @router.get("", response_model=List[DeviceResponse])
-async def list_paired_devices(
+def list_paired_devices(
     fridge: Fridge = Depends(get_user_fridge), db: Session = Depends(get_db)
 ):
     """Liste tous les appareils connectés à ce frigo"""
@@ -83,7 +83,7 @@ async def list_paired_devices(
 
 
 @router.delete("/{device_id}", status_code=204)
-async def unpair_device(
+def unpair_device(
     device_id: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -102,7 +102,7 @@ async def unpair_device(
 
 
 @router.post("/heartbeat")
-async def device_heartbeat(
+def device_heartbeat(
     fridge: Fridge = Depends(get_user_fridge),
     device_id: str = None,
     db: Session = Depends(get_db),
@@ -110,7 +110,7 @@ async def device_heartbeat(
     """
     Ping périodique pour maintenir la connexion active
 
-    Les appareils (S22 et mobile) envoient ce ping toutes les 30 secondes
+    Les appareils envoient ce ping toutes les 30 secondes
     pour montrer qu'ils sont toujours connectés.
     """
     if device_id:

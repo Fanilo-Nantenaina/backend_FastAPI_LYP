@@ -3,6 +3,7 @@ from sqlalchemy.exc import IntegrityError
 from typing import Optional, Dict, Any
 import logging
 
+from app.middleware.transaction_handler import transactional
 from app.models.user import User
 from app.core.security import get_password_hash, verify_password
 from app.schemas.user import UserUpdateRequest
@@ -24,6 +25,7 @@ class UserService:
         """Récupère un utilisateur par son email"""
         return self.db.query(User).filter(User.email == email).first()
 
+    @transactional
     def create_user(
         self,
         email: str,
@@ -49,7 +51,7 @@ class UserService:
             )
 
             self.db.add(user)
-            self.db.commit()
+            # self.db.commit()
             self.db.refresh(user)
 
             logger.info(f"User created: {user.id} - {user.email}")
@@ -60,6 +62,7 @@ class UserService:
             logger.warning(f"User creation failed: email {email} already exists")
             return None
 
+    @transactional
     def update_user(
         self, user_id: int, update_data: UserUpdateRequest
     ) -> Optional[User]:
@@ -69,7 +72,6 @@ class UserService:
         if not user:
             return None
 
-        # Mettre à jour les champs fournis
         if update_data.name is not None:
             user.name = update_data.name
 
@@ -83,17 +85,17 @@ class UserService:
             user.timezone = update_data.timezone
 
         if update_data.prefs is not None:
-            # Fusionner les préférences existantes avec les nouvelles
             current_prefs = user.prefs or {}
             current_prefs.update(update_data.prefs)
             user.prefs = current_prefs
 
-        self.db.commit()
+        # self.db.commit()
         self.db.refresh(user)
 
         logger.info(f"User updated: {user.id}")
         return user
 
+    @transactional
     def update_password(
         self, user_id: int, old_password: str, new_password: str
     ) -> bool:
@@ -108,20 +110,19 @@ class UserService:
         if not user:
             return False
 
-        # Vérifier l'ancien mot de passe
         if not verify_password(old_password, user.password_hash):
             logger.warning(
                 f"Password update failed for user {user_id}: incorrect old password"
             )
             return False
 
-        # Mettre à jour avec le nouveau mot de passe
         user.password_hash = get_password_hash(new_password)
-        self.db.commit()
+        # self.db.commit()
 
         logger.info(f"Password updated for user {user_id}")
         return True
 
+    @transactional
     def delete_user(self, user_id: int) -> bool:
         """
         Supprime un utilisateur
@@ -134,7 +135,7 @@ class UserService:
             return False
 
         self.db.delete(user)
-        self.db.commit()
+        # self.db.commit()
 
         logger.info(f"User deleted: {user_id}")
         return True
@@ -153,6 +154,7 @@ class UserService:
             "prefs": user.prefs or {},
         }
 
+    @transactional
     def update_user_preferences(
         self, user_id: int, preferences: Dict[str, Any]
     ) -> Optional[User]:
@@ -163,7 +165,7 @@ class UserService:
             return None
 
         user.prefs = preferences
-        self.db.commit()
+        # self.db.commit()
         self.db.refresh(user)
 
         return user

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Float, String, ForeignKey, Date, DateTime, JSON
+from sqlalchemy import Column, Integer, Float, String, ForeignKey, Date, DateTime, JSON, Index
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.core.database import Base
@@ -37,17 +37,24 @@ class InventoryItem(Base):
     # Tracking
     source = Column(String)  # 'manual', 'vision', 'barcode'
     last_seen_at = Column(
-        DateTime, default=datetime.utcnow
+        DateTime, default=datetime.utcnow, index=True
     )  # RG7: Dernière détection par vision
 
     # Métadonnées
-    metadata = Column(JSON, default=dict)
+    extra_data = Column(JSON, default=dict)
 
     # Relations
     fridge = relationship("Fridge", back_populates="inventory_items")
     product = relationship("Product", back_populates="inventory_items")
     events = relationship("Event", back_populates="inventory_item")
     alerts = relationship("Alert", back_populates="inventory_item")
+    
+    __table_args__ = (
+        Index('ix_inventory_fridge_quantity', 'fridge_id', 'quantity'),
+        Index('ix_inventory_fridge_expiry', 'fridge_id', 'expiry_date'),
+        Index('ix_inventory_fridge_lastseen', 'fridge_id', 'last_seen_at'),
+        Index('ix_inventory_expiry_quantity', 'expiry_date', 'quantity'),
+    )
 
     def __repr__(self):
         return f"<InventoryItem(id={self.id}, product_id={self.product_id}, quantity={self.quantity} {self.unit})>"

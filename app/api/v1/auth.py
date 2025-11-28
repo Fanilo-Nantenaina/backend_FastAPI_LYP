@@ -16,13 +16,11 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 @router.post(
     "/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED
 )
-async def register(request: RegisterRequest, db: Session = Depends(get_db)):
+def register(request: RegisterRequest, db: Session = Depends(get_db)):
     """Inscription d'un nouvel utilisateur"""
-    # Vérifier si l'email existe déjà
     if db.query(User).filter(User.email == request.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    # Créer l'utilisateur
     user = User(
         email=request.email,
         name=request.name,
@@ -35,7 +33,6 @@ async def register(request: RegisterRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
 
-    # Générer les tokens
     access_token = create_access_token({"sub": user.id})
     refresh_token = create_refresh_token({"sub": user.id})
 
@@ -47,7 +44,7 @@ async def register(request: RegisterRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(request: LoginRequest, db: Session = Depends(get_db)):
+def login(request: LoginRequest, db: Session = Depends(get_db)):
     """Connexion utilisateur"""
     user = db.query(User).filter(User.email == request.email).first()
 

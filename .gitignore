@@ -39,3 +39,11 @@ htmlcov/
 *~ 
 .build/
 dist/
+
+*[-_]*.txt
+
+*[éèàç]*
+
+*[$&@#]*
+
+tests/

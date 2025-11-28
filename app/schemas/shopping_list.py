@@ -1,17 +1,25 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, validator
 from typing import List, Optional
 from datetime import datetime
 
 
 class ShoppingListItemCreate(BaseModel):
-    product_id: int
-    quantity: float
-    unit: str
+    product_id: int = Field(..., gt=0)
+    quantity: float = Field(..., gt=0)
+    unit: str = Field(..., min_length=1, max_length=20)
 
 
 class ShoppingListCreate(BaseModel):
-    fridge_id: int
-    items: List[ShoppingListItemCreate]
+    fridge_id: int = Field(..., gt=0)
+    items: List[ShoppingListItemCreate] = Field(..., min_items=1)
+
+    @validator("items")
+    def validate_items(cls, v):
+        """Vérifier qu'il n'y a pas de doublons"""
+        product_ids = [item.product_id for item in v]
+        if len(product_ids) != len(set(product_ids)):
+            raise ValueError("La liste contient des produits en double")
+        return v
 
 
 class GenerateShoppingListRequest(BaseModel):

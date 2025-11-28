@@ -4,7 +4,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user_id
 from app.models.user import User
 from app.models.fridge import Fridge
-
+from fastapi import Depends, HTTPException
 
 async def get_current_user(
     user_id: int = Depends(get_current_user_id), db: Session = Depends(get_db)

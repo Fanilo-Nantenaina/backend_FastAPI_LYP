@@ -34,14 +34,12 @@ async def analyze_fridge_image(
         return result
 
     except Exception as e:
-        # Il est généralement préférable de loguer l'erreur avant de renvoyer 500
-        # et de donner un message d'erreur générique si l'erreur interne est sensible.
         raise HTTPException(status_code=500, detail=f"Vision analysis failed: {str(e)}")
 
 
 @router.post(
     "/manual-entry", status_code=200
-)  # Changé 201 en 200 car c'est une mise à jour
+) 
 async def manual_expiry_entry(
     request: ManualEntryRequest,
     fridge: Fridge = Depends(get_user_fridge),
@@ -56,8 +54,6 @@ async def manual_expiry_entry(
     vision_service = VisionService(db)
 
     try:
-        # Met à jour la date de péremption pour un article spécifique (request.item_id)
-        # qui appartient au frigo actuel (fridge.id).
         updated_item = vision_service.update_expiry_date_manually(
             item_id=request.item_id,
             fridge_id=fridge.id,
@@ -65,16 +61,12 @@ async def manual_expiry_entry(
         )
 
         if updated_item is None:
-            # Lève une 404 si l'item n'est pas trouvé dans ce frigo
             raise HTTPException(
                 status_code=404,
                 detail=f"Item with ID {request.item_id} not found in fridge {fridge.id}",
             )
 
-        # Si la mise à jour est réussie, on pourrait retourner l'item mis à jour,
-        # mais la description n'inclut pas de response_model, on retourne donc un succès.
         return {"message": "Expiry date updated successfully"}
 
     except Exception as e:
-        # Gestion d'une erreur interne du service (e.g., problème de base de données)
         raise HTTPException(status_code=500, detail=f"Manual update failed: {str(e)}")

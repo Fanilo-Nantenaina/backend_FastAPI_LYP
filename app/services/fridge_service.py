@@ -3,6 +3,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 import logging
 
+from app.middleware.transaction_handler import transactional
 from app.models.fridge import Fridge
 from app.models.inventory import InventoryItem
 from app.models.alert import Alert
@@ -17,6 +18,7 @@ class FridgeService:
     def __init__(self, db: Session):
         self.db = db
 
+    @transactional
     def create_fridge(
         self,
         user_id: int,
@@ -38,7 +40,7 @@ class FridgeService:
         )
 
         self.db.add(fridge)
-        self.db.commit()
+        # self.db.commit()
         self.db.refresh(fridge)
 
         logger.info(f"Fridge created: {fridge.id} for user {user_id}")
@@ -65,6 +67,7 @@ class FridgeService:
         """RG1: Récupère tous les frigos d'un utilisateur"""
         return self.db.query(Fridge).filter(Fridge.user_id == user_id).all()
 
+    @transactional
     def update_fridge(
         self,
         fridge_id: int,
@@ -86,17 +89,17 @@ class FridgeService:
             fridge.location = location
 
         if config is not None:
-            # Fusionner avec la config existante
             current_config = fridge.config or {}
             current_config.update(config)
             fridge.config = current_config
 
-        self.db.commit()
+        # self.db.commit()
         self.db.refresh(fridge)
 
         logger.info(f"Fridge updated: {fridge_id}")
         return fridge
 
+    @transactional
     def delete_fridge(self, fridge_id: int, user_id: int) -> bool:
         """
         Supprime un frigo (RG2: vérifie la propriété)
@@ -109,7 +112,7 @@ class FridgeService:
             return False
 
         self.db.delete(fridge)
-        self.db.commit()
+        # self.db.commit()
 
         logger.info(f"Fridge deleted: {fridge_id}")
         return True
@@ -121,21 +124,18 @@ class FridgeService:
         if not fridge:
             return {}
 
-        # Compter les items actifs
         active_items = (
             self.db.query(InventoryItem)
             .filter(InventoryItem.fridge_id == fridge_id, InventoryItem.quantity > 0)
             .count()
         )
 
-        # Compter les alertes pending
         pending_alerts = (
             self.db.query(Alert)
             .filter(Alert.fridge_id == fridge_id, Alert.status == "pending")
             .count()
         )
 
-        # Compter les événements du dernier mois
         from datetime import timedelta
 
         month_ago = datetime.utcnow() - timedelta(days=30)
@@ -145,7 +145,6 @@ class FridgeService:
             .count()
         )
 
-        # Valeur totale estimée (si metadata contient les prix)
         total_value = 0
         items = (
             self.db.query(InventoryItem)
@@ -171,7 +170,6 @@ class FridgeService:
         """Résumé rapide d'un frigo pour l'affichage"""
         stats = self.get_fridge_statistics(fridge_id)
 
-        # Ajouter les alertes critiques
         critical_alerts = (
             self.db.query(Alert)
             .filter(

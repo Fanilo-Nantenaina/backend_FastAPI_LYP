@@ -1,4 +1,4 @@
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, Request
 
 
 class FridgeNotFoundException(HTTPException):
@@ -7,6 +7,11 @@ class FridgeNotFoundException(HTTPException):
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Fridge not found or access denied",
         )
+
+
+class FridgeNotFoundError(Exception):
+    def __init__(self, fridge_id: int):
+        self.fridge_id = fridge_id
 
 
 class ProductNotFoundException(HTTPException):

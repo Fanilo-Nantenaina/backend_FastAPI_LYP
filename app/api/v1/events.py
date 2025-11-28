@@ -8,22 +8,32 @@ from app.core.dependencies import get_user_fridge
 from app.models.fridge import Fridge
 from app.models.event import Event
 from app.schemas.event import EventResponse
+from typing import Dict, Any
 
 router = APIRouter(prefix="/fridges/{fridge_id}/events", tags=["Events"])
 
 
-@router.get("", response_model=List[EventResponse])
-async def list_events(
+# @router.get("", response_model=List[EventResponse])
+@router.get("", response_model=Dict[str, Any])
+def list_events(
     fridge: Fridge = Depends(get_user_fridge),
     db: Session = Depends(get_db),
-    event_type: Optional[str] = None,
-    limit: int = Query(50, le=200),
-    offset: int = 0,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
 ):
-    """CU5: Consulter l'Historique des événements"""
+    offset = (page - 1) * page_size
+
     query = db.query(Event).filter(Event.fridge_id == fridge.id)
+    total = query.count()
 
-    if event_type:
-        query = query.filter(Event.type == event_type)
+    events = (
+        query.order_by(Event.created_at.desc()).offset(offset).limit(page_size).all()
+    )
 
-    return query.order_by(Event.created_at.desc()).offset(offset).limit(limit).all()
+    return {
+        "items": events,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size,
+    }

@@ -19,13 +19,12 @@ router = APIRouter(prefix="/shopping-lists", tags=["Shopping Lists"])
 
 
 @router.post("", response_model=ShoppingListResponse, status_code=201)
-async def create_shopping_list(
+def create_shopping_list(
     request: ShoppingListCreate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """CU4: Créer manuellement une liste de courses"""
-    # RG13: Vérifier que l'utilisateur possède le frigo
     fridge = (
         db.query(Fridge)
         .filter(Fridge.id == request.fridge_id, Fridge.user_id == current_user.id)
@@ -43,7 +42,6 @@ async def create_shopping_list(
     db.add(shopping_list)
     db.flush()
 
-    # Ajouter les items
     for item_data in request.items:
         item = ShoppingListItem(
             shopping_list_id=shopping_list.id,
@@ -60,7 +58,7 @@ async def create_shopping_list(
 
 
 @router.post("/generate", response_model=ShoppingListResponse, status_code=201)
-async def generate_shopping_list(
+def generate_shopping_list(
     request: GenerateShoppingListRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -70,7 +68,6 @@ async def generate_shopping_list(
     RG13: Vérifie que l'utilisateur possède le frigo
     RG15: Inclut seulement les produits en quantité insuffisante
     """
-    # RG13
     fridge = (
         db.query(Fridge)
         .filter(Fridge.id == request.fridge_id, Fridge.user_id == current_user.id)
@@ -94,7 +91,7 @@ async def generate_shopping_list(
 
 
 @router.get("", response_model=List[ShoppingListResponse])
-async def list_shopping_lists(
+def list_shopping_lists(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     fridge_id: int = None,
@@ -109,7 +106,7 @@ async def list_shopping_lists(
 
 
 @router.get("/{list_id}", response_model=ShoppingListResponse)
-async def get_shopping_list(
+def get_shopping_list(
     list_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -128,7 +125,7 @@ async def get_shopping_list(
 
 
 @router.put("/{list_id}/items/{item_id}/status")
-async def update_item_status(
+def update_item_status(
     list_id: int,
     item_id: int,
     status: str,
@@ -136,7 +133,6 @@ async def update_item_status(
     db: Session = Depends(get_db),
 ):
     """Marquer un item comme acheté/pending/annulé"""
-    # Vérifier que la liste appartient à l'utilisateur
     shopping_list = (
         db.query(ShoppingList)
         .filter(ShoppingList.id == list_id, ShoppingList.user_id == current_user.id)
@@ -146,7 +142,6 @@ async def update_item_status(
     if not shopping_list:
         raise HTTPException(status_code=404, detail="Shopping list not found")
 
-    # Mettre à jour l'item
     item = (
         db.query(ShoppingListItem)
         .filter(
@@ -158,7 +153,6 @@ async def update_item_status(
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
 
-    # Validation basique du statut (à étendre avec une enum si disponible)
     if status.lower() not in ["pending", "purchased", "cancelled"]:
         raise HTTPException(status_code=400, detail="Invalid status value")
 
@@ -169,14 +163,13 @@ async def update_item_status(
 
 
 @router.delete("/{list_id}/items/{item_id}", status_code=204)
-async def delete_shopping_list_item(
+def delete_shopping_list_item(
     list_id: int,
     item_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Supprimer un item spécifique de la liste de courses"""
-    # Vérification d'appartenance de la liste
     shopping_list = (
         db.query(ShoppingList)
         .filter(ShoppingList.id == list_id, ShoppingList.user_id == current_user.id)
@@ -188,7 +181,6 @@ async def delete_shopping_list_item(
             status_code=404, detail="Shopping list not found or access denied"
         )
 
-    # Récupérer l'item
     item = (
         db.query(ShoppingListItem)
         .filter(
@@ -202,11 +194,11 @@ async def delete_shopping_list_item(
 
     db.delete(item)
     db.commit()
-    return None  # Statut 204
+    return None
 
 
 @router.delete("/{list_id}", status_code=204)
-async def delete_shopping_list(
+def delete_shopping_list(
     list_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -216,7 +208,7 @@ async def delete_shopping_list(
         db.query(ShoppingList)
         .filter(ShoppingList.id == list_id, ShoppingList.user_id == current_user.id)
         .first()
-    )  # Complète la ligne
+    )
 
     if not shopping_list:
         raise HTTPException(
@@ -224,7 +216,6 @@ async def delete_shopping_list(
         )
 
     db.delete(shopping_list)
-    # SQLAlchemy (avec la cascade bien configurée sur le modèle) gérera la suppression des items.
     db.commit()
 
-    return None  # Statut 204
+    return None

@@ -14,12 +14,11 @@ router = APIRouter(prefix="/fridges/{fridge_id}/alerts", tags=["Alerts"])
 
 
 @router.get("", response_model=List[AlertResponse])
-async def list_alerts(
+def list_alerts(
     fridge: Fridge = Depends(get_user_fridge),
     db: Session = Depends(get_db),
     status: str = None,
 ):
-    """CU8: Consulter les alertes"""
     query = db.query(Alert).filter(Alert.fridge_id == fridge.id)
 
     if status:
@@ -29,13 +28,12 @@ async def list_alerts(
 
 
 @router.put("/{alert_id}", response_model=AlertResponse)
-async def update_alert_status(
+def update_alert_status(
     alert_id: int,
     request: AlertUpdateRequest,
     fridge: Fridge = Depends(get_user_fridge),
     db: Session = Depends(get_db),
 ):
-    """CU8: Changer le statut d'une alerte"""
     alert = (
         db.query(Alert)
         .filter(Alert.id == alert_id, Alert.fridge_id == fridge.id)
@@ -54,13 +52,9 @@ async def update_alert_status(
 
 
 @router.post("/trigger-check")
-async def trigger_alert_check(
+def trigger_alert_check(
     fridge: Fridge = Depends(get_user_fridge), db: Session = Depends(get_db)
 ):
-    """
-    Déclencher manuellement la vérification des alertes pour ce frigo
-    Utile pour tester ou forcer une vérification
-    """
     alert_service = AlertService(db)
     alert_service.check_and_create_alerts(fridge_id=fridge.id)
 

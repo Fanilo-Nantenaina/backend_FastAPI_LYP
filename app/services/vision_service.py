@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from google import genai
 from google.genai import types
 
+from app.middleware.transaction_handler import transactional
 from app.core.config import settings
 from app.models.product import Product
 from app.models.inventory import InventoryItem
@@ -21,6 +22,7 @@ class VisionService:
         self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
         self.model = settings.GEMINI_MODEL
 
+    @transactional
     async def analyze_and_update_inventory(
         self, image_file: UploadFile, fridge_id: int
     ) -> Dict[str, Any]:
@@ -55,7 +57,7 @@ class VisionService:
                     }
                 )
 
-        self.db.commit()
+        # self.db.commit()
 
         return {
             "timestamp": datetime.now().isoformat(),
@@ -238,7 +240,6 @@ class VisionService:
 
     def _find_or_create_product(self, detected: DetectedProduct) -> Product:
         """Trouve ou crée un produit dans la DB"""
-        # Recherche par nom similaire
         product = (
             self.db.query(Product)
             .filter(Product.name.ilike(f"%{detected.product_name}%"))
@@ -269,7 +270,8 @@ class VisionService:
 
         return None
 
-    def update_expiry_date_manual(
+    @transactional
+    def update_expiry_date_manually(
         self, inventory_item_id: int, expiry_date: date, fridge_id: int
     ) -> Optional[InventoryItem]:
         """Mise à jour manuelle de la date de péremption"""
@@ -292,6 +294,6 @@ class VisionService:
                 payload={"source": "manual", "expiry_date": expiry_date.isoformat()},
             )
             self.db.add(event)
-            self.db.commit()
+            # self.db.commit()
 
         return item

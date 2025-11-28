@@ -25,7 +25,8 @@ class Product(Base):
     tags = Column(
         ARRAY(String), default=list
     )  # vegan, gluten-free, dairy, etc. (pour RG14)
-    metadata = Column(JSON, default=dict)  # Informations supplémentaires
+
+    extra_data = Column(JSON, default=dict)  # ✔️ Renommé
 
     # Relations
     inventory_items = relationship("InventoryItem", back_populates="product")

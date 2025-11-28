@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.core.database import Base
@@ -30,6 +30,8 @@ class FridgeDevice(Base):
     # Tracking
     created_at = Column(DateTime, default=datetime.utcnow)
     last_active_at = Column(DateTime)
+
+    extra_data = Column(JSON, default=dict)
 
     # Relations
     fridge = relationship("Fridge", back_populates="devices")

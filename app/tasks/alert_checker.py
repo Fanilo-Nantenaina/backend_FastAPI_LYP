@@ -31,9 +31,8 @@ def check_all_alerts():
         alert_service = AlertService(db)
         notification_service = NotificationService(db)
 
-        # Vérifier et créer les alertes pour tous les frigos
         stats = alert_service.check_and_create_alerts(
-            fridge_id=None, send_notifications=True  # Tous les frigos
+            fridge_id=None, send_notifications=True
         )
 
         logger.info(
@@ -92,7 +91,6 @@ def send_daily_summaries():
     try:
         notification_service = NotificationService(db)
 
-        # Récupérer tous les frigos
         fridges = db.query(Fridge).all()
 
         sent_count = 0
@@ -147,10 +145,8 @@ def cleanup_old_data():
         alert_service = AlertService(db)
         event_service = EventService(db)
 
-        # Supprimer les alertes résolues de plus de 30 jours
         deleted_alerts = alert_service.delete_old_alerts(days=30)
 
-        # Supprimer les événements de plus de 90 jours
         deleted_events = event_service.cleanup_old_events(days=90)
 
         logger.info(
@@ -184,7 +180,6 @@ def check_lost_items_only():
 
         alert_service = AlertService(db)
 
-        # Récupérer tous les frigos
         fridges = db.query(Fridge).all()
 
         total_lost_items = 0
@@ -193,7 +188,6 @@ def check_lost_items_only():
             config = fridge.config or {}
             lost_hours = config.get("lost_item_threshold_hours", 72)
 
-            # Récupérer les items qui n'ont pas été vus depuis longtemps
             threshold = datetime.utcnow() - timedelta(hours=lost_hours)
 
             items = (
@@ -207,7 +201,6 @@ def check_lost_items_only():
             )
 
             for item in items:
-                # Créer l'alerte si elle n'existe pas (RG12)
                 alert = alert_service._check_lost_item_alert(
                     item, fridge.id, lost_hours
                 )

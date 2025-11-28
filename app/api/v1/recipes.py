@@ -14,7 +14,7 @@ router = APIRouter(prefix="/recipes", tags=["Recipes"])
 
 
 @router.get("", response_model=List[RecipeResponse])
-async def list_recipes(
+def list_recipes(
     db: Session = Depends(get_db),
     difficulty: str = None,
     cuisine: str = None,
@@ -33,7 +33,7 @@ async def list_recipes(
 
 
 @router.post("", response_model=RecipeResponse, status_code=201)
-async def create_recipe(
+def create_recipe(
     request: RecipeCreate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -45,7 +45,7 @@ async def create_recipe(
 
 
 @router.get("/{recipe_id}", response_model=RecipeResponse)
-async def get_recipe(recipe_id: int, db: Session = Depends(get_db)):
+def get_recipe(recipe_id: int, db: Session = Depends(get_db)):
     """Récupérer une recette spécifique"""
     recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
     if not recipe:
@@ -54,18 +54,16 @@ async def get_recipe(recipe_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{recipe_id}/favorite", status_code=201)
-async def add_to_favorites(
+def add_to_favorites(
     recipe_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """CU6: Marquer une recette comme favorite (RG16)"""
-    # Vérifier que la recette existe
     recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
 
-    # RG16: Vérifier que le favori n'existe pas déjà
     existing = (
         db.query(RecipeFavorite)
         .filter(
@@ -78,7 +76,6 @@ async def add_to_favorites(
     if existing:
         raise HTTPException(status_code=400, detail="Recipe already in favorites")
 
-    # Ajouter aux favoris
     favorite = RecipeFavorite(user_id=current_user.id, recipe_id=recipe_id)
     db.add(favorite)
     db.commit()
@@ -87,7 +84,7 @@ async def add_to_favorites(
 
 
 @router.delete("/{recipe_id}/favorite", status_code=204)
-async def remove_from_favorites(
+def remove_from_favorites(
     recipe_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -111,7 +108,7 @@ async def remove_from_favorites(
 
 
 @router.get("/favorites/mine", response_model=List[RecipeResponse])
-async def list_my_favorites(
+def list_my_favorites(
     current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ):
     """CU6: Consulter les recettes favorites"""
@@ -125,11 +122,10 @@ async def list_my_favorites(
     return favorites
 
 
-# Route spéciale pour les recettes faisables avec l'inventaire actuel
 @router.get(
     "/fridges/{fridge_id}/feasible", response_model=List[FeasibleRecipeResponse]
 )
-async def list_feasible_recipes(
+def list_feasible_recipes(
     fridge: Fridge = Depends(get_user_fridge),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),

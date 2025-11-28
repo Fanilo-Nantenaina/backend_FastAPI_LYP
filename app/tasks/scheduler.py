@@ -30,29 +30,21 @@ def start_scheduler():
     """
 
     if not settings.SCHEDULER_ENABLED:
-        logger.warning("⚠️ Scheduler is disabled in settings")
+        logger.warning("Scheduler is disabled in settings")
         return
 
-    logger.info("⏰ Starting scheduler...")
+    logger.info("Starting scheduler...")
 
-    # ==========================================
-    # TÂCHE 1: Vérification des alertes (CU7)
-    # ==========================================
-    # Toutes les heures
     scheduler.add_job(
         check_all_alerts,
         trigger=IntervalTrigger(hours=settings.ALERT_CHECK_INTERVAL_HOURS),
         id="check_alerts",
         name="Check expiry and lost item alerts",
         replace_existing=True,
-        misfire_grace_time=300,  # 5 minutes de grâce si le serveur était arrêté
+        misfire_grace_time=300,
     )
     logger.info("✓ Scheduled: Alert check (every hour)")
 
-    # ==========================================
-    # TÂCHE 2: Résumés quotidiens
-    # ==========================================
-    # Tous les jours à l'heure configurée (ex: 08:00)
     if settings.SEND_DAILY_SUMMARY:
         hour, minute = settings.DAILY_SUMMARY_TIME.split(":")
 
@@ -66,11 +58,7 @@ def start_scheduler():
         logger.info(
             f"✓ Scheduled: Daily summaries (every day at {settings.DAILY_SUMMARY_TIME})"
         )
-
-    # ==========================================
-    # TÂCHE 3: Nettoyage des données
-    # ==========================================
-    # Tous les jours à 3h00 du matin
+    
     scheduler.add_job(
         cleanup_old_data,
         trigger=CronTrigger(hour=3, minute=0),
@@ -80,10 +68,6 @@ def start_scheduler():
     )
     logger.info("✓ Scheduled: Data cleanup (every day at 03:00)")
 
-    # ==========================================
-    # TÂCHE 4: Vérification des objets perdus
-    # ==========================================
-    # Toutes les 6 heures (plus fréquent que la vérification complète)
     scheduler.add_job(
         check_lost_items_only,
         trigger=IntervalTrigger(hours=6),
@@ -93,23 +77,19 @@ def start_scheduler():
     )
     logger.info("✓ Scheduled: Lost items check (every 6 hours)")
 
-    # ==========================================
-    # Démarrer le scheduler
-    # ==========================================
     scheduler.start()
-    logger.info("✅ Scheduler started successfully")
+    logger.info("Scheduler started successfully")
 
-    # Afficher les tâches planifiées
-    logger.info("📋 Scheduled jobs:")
+    logger.info("Scheduled jobs:")
     for job in scheduler.get_jobs():
         logger.info(f"  - {job.name} (ID: {job.id}, Next run: {job.next_run_time})")
 
 
 def stop_scheduler():
     """Arrête proprement le scheduler"""
-    logger.info("🛑 Stopping scheduler...")
+    logger.info("Stopping scheduler...")
     scheduler.shutdown(wait=True)
-    logger.info("✅ Scheduler stopped")
+    logger.info("Scheduler stopped")
 
 
 def get_scheduler_status():

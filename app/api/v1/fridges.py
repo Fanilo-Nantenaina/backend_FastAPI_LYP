@@ -6,12 +6,13 @@ from app.core.dependencies import get_current_user
 from app.models.user import User
 from app.models.fridge import Fridge
 from app.schemas.fridge import FridgeCreate, FridgeResponse, FridgeUpdate
+from app.utils.exceptions import FridgeNotFoundError
 
 router = APIRouter(prefix="/fridges", tags=["Fridges"])
 
 
 @router.post("", response_model=FridgeResponse, status_code=201)
-async def create_fridge(
+def create_fridge(
     request: FridgeCreate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -31,7 +32,7 @@ async def create_fridge(
 
 
 @router.get("", response_model=List[FridgeResponse])
-async def list_fridges(
+def list_fridges(
     current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ):
     """Liste tous les frigos de l'utilisateur (RG1)"""
@@ -39,7 +40,7 @@ async def list_fridges(
 
 
 @router.get("/{fridge_id}", response_model=FridgeResponse)
-async def get_fridge(
+def get_fridge(
     fridge_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -52,12 +53,12 @@ async def get_fridge(
     )
 
     if not fridge:
-        raise HTTPException(status_code=404, detail="Fridge not found")
+        raise FridgeNotFoundError(fridge_id=fridge_id)
     return fridge
 
 
 @router.put("/{fridge_id}", response_model=FridgeResponse)
-async def update_fridge(
+def update_fridge(
     fridge_id: int,
     request: FridgeUpdate,
     current_user: User = Depends(get_current_user),
@@ -71,7 +72,7 @@ async def update_fridge(
     )
 
     if not fridge:
-        raise HTTPException(status_code=404, detail="Fridge not found")
+        raise FridgeNotFoundError(fridge_id=fridge_id)
 
     if request.name is not None:
         fridge.name = request.name
@@ -86,7 +87,7 @@ async def update_fridge(
 
 
 @router.delete("/{fridge_id}", status_code=204)
-async def delete_fridge(
+def delete_fridge(
     fridge_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -99,9 +100,8 @@ async def delete_fridge(
     )
 
     if not fridge:
-        raise HTTPException(status_code=404, detail="Fridge not found")
+        raise FridgeNotFoundError(fridge_id=fridge_id)
 
     db.delete(fridge)
     db.commit()
-    # Retourne un statut 204 (No Content) pour une suppression réussie
     return

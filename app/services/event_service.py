@@ -3,6 +3,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 import logging
 
+from app.middleware.transaction_handler import transactional
 from app.models.event import Event
 from app.models.inventory import InventoryItem
 
@@ -18,6 +19,7 @@ class EventService:
     def __init__(self, db: Session):
         self.db = db
 
+    @transactional
     def create_event(
         self,
         fridge_id: int,
@@ -46,7 +48,7 @@ class EventService:
         )
 
         self.db.add(event)
-        self.db.commit()
+        # self.db.commit()
         self.db.refresh(event)
 
         logger.debug(f"Event created: {event.type} for fridge {fridge_id}")
@@ -81,7 +83,6 @@ class EventService:
 
         cutoff_date = datetime.utcnow() - timedelta(days=days)
 
-        # Compter par type
         type_counts = (
             self.db.query(Event.type, func.count(Event.id).label("count"))
             .filter(Event.fridge_id == fridge_id, Event.created_at >= cutoff_date)
@@ -89,10 +90,8 @@ class EventService:
             .all()
         )
 
-        # Total d'événements
         total = sum(count for _, count in type_counts)
 
-        # Événements par jour (derniers 7 jours)
         week_ago = datetime.utcnow() - timedelta(days=7)
         daily_counts = (
             self.db.query(
@@ -123,6 +122,7 @@ class EventService:
             .all()
         )
 
+    @transactional
     def cleanup_old_events(self, days: int = 90) -> int:
         """
         Nettoie les anciens événements pour optimiser la DB
@@ -139,7 +139,7 @@ class EventService:
         for event in old_events:
             self.db.delete(event)
 
-        self.db.commit()
+        # self.db.commit()
 
         logger.info(f"Cleaned up {count} old events")
         return count

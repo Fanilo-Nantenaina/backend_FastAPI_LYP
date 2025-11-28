@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, JSON, DateTime
+from sqlalchemy import Column, Integer, String, ForeignKey, JSON, DateTime, Index
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.core.database import Base
@@ -31,6 +31,12 @@ class Event(Base):
     # Relations
     fridge = relationship("Fridge", back_populates="events")
     inventory_item = relationship("InventoryItem", back_populates="events")
+    
+    __table_args__ = (
+        Index('ix_event_fridge_created', 'fridge_id', 'created_at'),
+        Index('ix_event_fridge_type', 'fridge_id', 'type'),
+        Index('ix_event_item_created', 'inventory_item_id', 'created_at'),
+    )
 
     def __repr__(self):
         return f"<Event(id={self.id}, type={self.type}, fridge_id={self.fridge_id})>"

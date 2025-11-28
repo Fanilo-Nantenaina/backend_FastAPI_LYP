@@ -1,12 +1,10 @@
-# ==========================================
-# app/services/alert_service.py (VERSION COMPLÈTE)
-# ==========================================
 from datetime import datetime, date, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 from typing import List, Optional, Dict, Any
 import logging
 
+from app.middleware.transaction_handler import transactional
 from app.models.alert import Alert
 from app.models.inventory import InventoryItem
 from app.models.fridge import Fridge
@@ -29,10 +27,6 @@ class AlertService:
         self.db = db
         self.notification_service = NotificationService(db)
 
-    # ==========================================
-    # CU7: VÉRIFICATION AUTOMATIQUE DES ALERTES
-    # ==========================================
-
     def check_and_create_alerts(
         self, fridge_id: Optional[int] = None, send_notifications: bool = True
     ) -> Dict[str, int]:
@@ -53,7 +47,6 @@ class AlertService:
             "total_notified": 0,
         }
 
-        # Déterminer quels frigos vérifier
         query = self.db.query(Fridge)
         if fridge_id:
             query = query.filter(Fridge.id == fridge_id)
@@ -62,7 +55,6 @@ class AlertService:
         logger.info(f"Checking alerts for {len(fridges)} fridge(s)")
 
         for fridge in fridges:
-            # Configuration du frigo
             config = fridge.config or {}
             expiry_days = config.get(
                 "expiry_warning_days", settings.EXPIRY_WARNING_DAYS
@@ -72,10 +64,8 @@ class AlertService:
             )
             low_stock_threshold = config.get("low_stock_threshold", 2.0)
 
-            # Récupérer l'utilisateur pour les notifications
-            user = fridge.owner
+            user = fridge.user
 
-            # Récupérer tous les items actifs
             items = (
                 self.db.query(InventoryItem)
                 .filter(
@@ -89,19 +79,16 @@ class AlertService:
             new_alerts = []
 
             for item in items:
-                # RG10: Vérifier les dates de péremption
                 expiry_alert = self._check_expiry_alert(item, fridge.id, expiry_days)
                 if expiry_alert:
                     new_alerts.append(expiry_alert)
                     stats[expiry_alert.type] += 1
 
-                # RG11: Vérifier les objets perdus
                 lost_alert = self._check_lost_item_alert(item, fridge.id, lost_hours)
                 if lost_alert:
                     new_alerts.append(lost_alert)
                     stats["LOST_ITEM"] += 1
 
-                # Vérifier le stock faible
                 stock_alert = self._check_low_stock_alert(
                     item, fridge.id, low_stock_threshold
                 )
@@ -109,7 +96,6 @@ class AlertService:
                     new_alerts.append(stock_alert)
                     stats["LOW_STOCK"] += 1
 
-            # Envoyer les notifications si demandé
             if send_notifications and new_alerts and user:
                 self._send_alert_notifications(new_alerts, user)
                 stats["total_notified"] += len(new_alerts)
@@ -179,7 +165,6 @@ class AlertService:
         if not item.last_seen_at:
             return None
 
-        # Calculer les heures depuis la dernière détection
         hours_since_seen = (
             datetime.utcnow() - item.last_seen_at
         ).total_seconds() / 3600
@@ -215,7 +200,6 @@ class AlertService:
         Crée une alerte si la quantité est en dessous du seuil configuré
         Utile pour les produits de base (lait, œufs, etc.)
         """
-        # Vérifier si le produit a un seuil minimum configuré
         if not item.product.metadata:
             return None
 
@@ -244,6 +228,7 @@ class AlertService:
 
         return None
 
+    @transactional
     def _create_alert_if_not_exists(
         self,
         fridge_id: int,
@@ -258,7 +243,6 @@ class AlertService:
         Returns:
             L'alerte créée, ou None si elle existe déjà
         """
-        # Vérifier si une alerte pending existe déjà
         existing = (
             self.db.query(Alert)
             .filter(
@@ -278,7 +262,6 @@ class AlertService:
             )
             return None
 
-        # Créer la nouvelle alerte
         alert = Alert(
             fridge_id=fridge_id,
             inventory_item_id=inventory_item_id,
@@ -287,7 +270,6 @@ class AlertService:
             status="pending",
         )
 
-        # Stocker les métadonnées dans le payload des événements si nécessaire
         if metadata:
             from app.models.event import Event
 
@@ -300,7 +282,7 @@ class AlertService:
             self.db.add(event)
 
         self.db.add(alert)
-        self.db.commit()
+        # self.db.commit()
         self.db.refresh(alert)
 
         logger.info(f"Created alert: {alert_type} for item {inventory_item_id}")
@@ -309,19 +291,16 @@ class AlertService:
     def _send_alert_notifications(self, alerts: List[Alert], user: User):
         """Envoie les notifications pour les nouvelles alertes"""
         try:
-            # Déterminer les canaux selon la priorité
             high_priority_alerts = [
                 a for a in alerts if a.type in ["EXPIRED", "EXPIRY_SOON"]
             ]
 
             if high_priority_alerts:
-                # Alertes critiques : push + email
                 for alert in high_priority_alerts:
                     self.notification_service.notify_alert(
                         alert=alert, user=user, channels=["push", "email"]
                     )
             else:
-                # Alertes normales : push uniquement
                 for alert in alerts:
                     self.notification_service.notify_alert(
                         alert=alert, user=user, channels=["push"]
@@ -333,10 +312,6 @@ class AlertService:
 
         except Exception as e:
             logger.error(f"Failed to send alert notifications: {e}")
-
-    # ==========================================
-    # CU8: GESTION DES ALERTES
-    # ==========================================
 
     def get_alerts(
         self,
@@ -356,6 +331,7 @@ class AlertService:
 
         return query.order_by(Alert.created_at.desc()).limit(limit).all()
 
+    @transactional
     def resolve_alert(self, alert_id: int, user_id: int) -> bool:
         """
         CU8: Marque une alerte comme résolue
@@ -375,7 +351,6 @@ class AlertService:
 
         alert.status = "resolved"
 
-        # Créer un événement
         from app.models.event import Event
 
         event = Event(
@@ -390,10 +365,11 @@ class AlertService:
         )
         self.db.add(event)
 
-        self.db.commit()
+        # self.db.commit()
         logger.info(f"Alert {alert_id} resolved by user {user_id}")
         return True
 
+    @transactional
     def bulk_resolve_alerts(
         self, fridge_id: int, user_id: int, alert_type: Optional[str] = None
     ) -> int:
@@ -422,10 +398,11 @@ class AlertService:
         for alert in alerts:
             alert.status = "resolved"
 
-        self.db.commit()
+        # self.db.commit()
         logger.info(f"Bulk resolved {count} alerts for fridge {fridge_id}")
         return count
 
+    @transactional
     def delete_old_alerts(self, days: int = 30) -> int:
         """
         Nettoie les anciennes alertes résolues
@@ -449,19 +426,14 @@ class AlertService:
         for alert in old_alerts:
             self.db.delete(alert)
 
-        self.db.commit()
+        # self.db.commit()
         logger.info(f"Deleted {count} old alerts")
         return count
-
-    # ==========================================
-    # STATISTIQUES ET ANALYSES
-    # ==========================================
 
     def get_alert_statistics(self, fridge_id: int) -> Dict[str, Any]:
         """Génère des statistiques sur les alertes d'un frigo"""
         from sqlalchemy import func
 
-        # Total par type
         type_stats = (
             self.db.query(Alert.type, func.count(Alert.id).label("count"))
             .filter(Alert.fridge_id == fridge_id)
@@ -469,7 +441,6 @@ class AlertService:
             .all()
         )
 
-        # Total par statut
         status_stats = (
             self.db.query(Alert.status, func.count(Alert.id).label("count"))
             .filter(Alert.fridge_id == fridge_id)
@@ -477,7 +448,6 @@ class AlertService:
             .all()
         )
 
-        # Alertes des 7 derniers jours
         week_ago = datetime.utcnow() - timedelta(days=7)
         recent_count = (
             self.db.query(Alert)

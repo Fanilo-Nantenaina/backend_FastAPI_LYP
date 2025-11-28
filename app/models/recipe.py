@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, JSON, DateTime
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, JSON, DateTime, Float
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.core.database import Base
@@ -21,7 +21,7 @@ class Recipe(Base):
     preparation_time = Column(Integer)  # En minutes
     difficulty = Column(String)  # easy, medium, hard
 
-    metadata = Column(JSON, default=dict)
+    extra_data = Column(JSON, default=dict)
     # Exemple: {"cuisine": "italian", "servings": 4, "calories": 450}
 
     created_at = Column(DateTime, default=datetime.utcnow)

@@ -3,6 +3,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime, date, timedelta
 import logging
 
+from app.middleware.transaction_handler import transactional
 from app.models.inventory import InventoryItem
 from app.models.product import Product
 from app.models.event import Event
@@ -19,6 +20,7 @@ class InventoryService:
     def __init__(self, db: Session):
         self.db = db
 
+    @transactional
     def add_item(
         self,
         fridge_id: int,
@@ -34,21 +36,17 @@ class InventoryService:
         Args:
             source: 'manual', 'vision', 'barcode'
         """
-        # Récupérer le produit (RG4: association obligatoire)
         product = self.db.query(Product).filter(Product.id == product_id).first()
 
         if not product:
             raise ValueError(f"Product {product_id} not found")
 
-        # Utiliser l'unité du produit par défaut si non fournie
         if not unit:
             unit = product.default_unit
 
-        # Estimer la date d'expiration si non fournie
         if not expiry_date and product.shelf_life_days:
             expiry_date = date.today() + timedelta(days=product.shelf_life_days)
 
-        # Créer l'item
         item = InventoryItem(
             fridge_id=fridge_id,
             product_id=product_id,
@@ -57,13 +55,12 @@ class InventoryService:
             unit=unit,
             expiry_date=expiry_date,
             source=source,
-            last_seen_at=datetime.utcnow(),  # RG7
+            last_seen_at=datetime.utcnow(),
         )
 
         self.db.add(item)
         self.db.flush()
 
-        # Créer un événement (RG5)
         event = Event(
             fridge_id=fridge_id,
             inventory_item_id=item.id,
@@ -78,12 +75,13 @@ class InventoryService:
         )
         self.db.add(event)
 
-        self.db.commit()
+        # self.db.commit()
         self.db.refresh(item)
 
         logger.info(f"Item added to inventory: {item.id} - {product.name}")
         return item
 
+    @transactional
     def update_quantity(
         self, item_id: int, new_quantity: float, reason: str = "manual_update"
     ) -> Optional[InventoryItem]:
@@ -96,14 +94,12 @@ class InventoryService:
         if not item:
             return None
 
-        # RG9: Vérification
         if new_quantity < 0:
             raise ValueError("Quantity cannot be negative (RG9)")
 
         old_quantity = item.quantity
         item.quantity = new_quantity
 
-        # Créer un événement
         event = Event(
             fridge_id=item.fridge_id,
             inventory_item_id=item.id,
@@ -116,7 +112,7 @@ class InventoryService:
         )
         self.db.add(event)
 
-        self.db.commit()
+        # self.db.commit()
         self.db.refresh(item)
 
         return item
@@ -134,7 +130,6 @@ class InventoryService:
         if not item:
             return None
 
-        # RG9: Vérifier qu'on ne va pas en dessous de zéro
         new_quantity = item.quantity - quantity_consumed
         if new_quantity < 0:
             raise ValueError(
@@ -142,14 +137,12 @@ class InventoryService:
                 f"Only {item.quantity} {item.unit} available (RG9)"
             )
 
-        # RG8: Si consommation partielle et pas de open_date, la définir
         if new_quantity > 0 and not item.open_date:
             item.open_date = date.today()
             logger.info(f"Open date set for item {item_id} (RG8)")
 
         item.quantity = new_quantity
 
-        # Créer un événement
         event = Event(
             fridge_id=item.fridge_id,
             inventory_item_id=item.id,
@@ -226,7 +219,6 @@ class InventoryService:
         if not item:
             return False
 
-        # Créer un événement avant suppression
         event = Event(
             fridge_id=item.fridge_id,
             inventory_item_id=item.id,

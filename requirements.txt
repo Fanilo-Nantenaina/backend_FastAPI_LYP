@@ -5,12 +5,14 @@ python-multipart
 
 # Database
 sqlalchemy
+psycopg2
 psycopg2-binary
 alembic
 
 # Pydantic
 pydantic
 pydantic-settings
+pydantic[email]
 
 # Security & Auth
 python-jose[cryptography]
@@ -36,3 +38,5 @@ redis
 pytest
 pytest-asyncio
 httpx
+
+# Caching inexistant

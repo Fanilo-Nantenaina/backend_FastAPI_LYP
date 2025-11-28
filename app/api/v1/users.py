@@ -9,13 +9,13 @@ router = APIRouter(prefix="/users", tags=["Users"])
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_current_user_profile(current_user: User = Depends(get_current_user)):
+def get_current_user_profile(current_user: User = Depends(get_current_user)):
     """Récupérer le profil de l'utilisateur connecté"""
     return current_user
 
 
 @router.put("/me", response_model=UserResponse)
-async def update_profile(
+def update_profile(
     request: UserUpdateRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),

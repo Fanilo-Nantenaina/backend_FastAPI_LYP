@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field, validator
 from typing import Optional, List, Dict, Any
 
 
@@ -16,8 +16,33 @@ class UserResponse(BaseModel):
 
 
 class UserUpdateRequest(BaseModel):
-    name: Optional[str] = None
-    preferred_cuisine: Optional[str] = None
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    preferred_cuisine: Optional[str] = Field(None, max_length=50)
     dietary_restrictions: Optional[List[str]] = None
-    timezone: Optional[str] = None
+    timezone: Optional[str] = Field(None, max_length=50)
     prefs: Optional[Dict[str, Any]] = None
+
+    @validator("name")
+    def validate_name(cls, v):
+        if v is not None and (not v or not v.strip()):
+            raise ValueError("Le nom ne peut pas être vide")
+        return v.strip() if v else v
+
+    @validator("timezone")
+    def validate_timezone(cls, v):
+        """Valider que le timezone est valide"""
+        if v:
+            import pytz
+
+            try:
+                pytz.timezone(v)
+            except pytz.exceptions.UnknownTimeZoneError:
+                raise ValueError(f"Timezone invalide: {v}")
+        return v
+
+    @validator("dietary_restrictions", each_item=True)
+    def validate_dietary_restrictions(cls, v):
+        """Normaliser les restrictions alimentaires"""
+        if not v or not v.strip():
+            raise ValueError("Les restrictions alimentaires ne peuvent pas être vides")
+        return v.lower().strip()

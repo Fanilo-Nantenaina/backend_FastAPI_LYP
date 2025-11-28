@@ -7,7 +7,6 @@ def validate_barcode(barcode: Optional[str]) -> bool:
     if not barcode:
         return True
 
-    # Accepte les formats standards
     return bool(re.match(r"^[\d\-]+$", barcode))
 
 
@@ -18,5 +17,4 @@ def validate_pairing_code(code: str) -> bool:
 
 def sanitize_search_query(query: str) -> str:
     """Nettoie une requête de recherche"""
-    # Supprimer les caractères spéciaux dangereux
     return re.sub(r"[^\w\s\-]", "", query).strip()

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Index
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.core.database import Base
@@ -38,6 +38,12 @@ class Alert(Base):
     # Relations
     fridge = relationship("Fridge", back_populates="alerts")
     inventory_item = relationship("InventoryItem", back_populates="alerts")
+
+    __table_args__ = (
+        Index("ix_alert_fridge_status", "fridge_id", "status"),
+        Index("ix_alert_fridge_type_status", "fridge_id", "type", "status"),
+        Index("ix_alert_created_status", "created_at", "status"),
+    )
 
     def __repr__(self):
         return f"<Alert(id={self.id}, type={self.type}, status={self.status})>"

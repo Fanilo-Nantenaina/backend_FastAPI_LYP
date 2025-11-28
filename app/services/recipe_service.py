@@ -1,6 +1,8 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from typing import List, Dict, Any
+
+from app.middleware.transaction_handler import transactional
 from app.models.recipe import Recipe, RecipeIngredient
 from app.models.inventory import InventoryItem
 from app.models.product import Product
@@ -12,6 +14,7 @@ class RecipeService:
     def __init__(self, db: Session):
         self.db = db
 
+    @transactional
     def create_recipe(self, request: RecipeCreate) -> Recipe:
         """Créer une nouvelle recette avec ses ingrédients"""
         recipe = Recipe(
@@ -26,7 +29,6 @@ class RecipeService:
         self.db.add(recipe)
         self.db.flush()
 
-        # Ajouter les ingrédients
         for ingredient in request.ingredients:
             recipe_ingredient = RecipeIngredient(
                 recipe_id=recipe.id,
@@ -36,7 +38,7 @@ class RecipeService:
             )
             self.db.add(recipe_ingredient)
 
-        self.db.commit()
+        # self.db.commit()
         self.db.refresh(recipe)
         return recipe
 
@@ -45,31 +47,25 @@ class RecipeService:
         CU6: Trouve les recettes faisables avec l'inventaire actuel
         RG14: Exclut les recettes violant les restrictions alimentaires
         """
-        # 1. Récupérer toutes les recettes
         all_recipes = self.db.query(Recipe).all()
 
-        # 2. Récupérer l'inventaire actuel du frigo
         inventory = (
             self.db.query(InventoryItem)
             .filter(InventoryItem.fridge_id == fridge_id, InventoryItem.quantity > 0)
             .all()
         )
 
-        # Créer un dictionnaire : product_id -> quantité disponible
         available_products = {
             item.product_id: {"quantity": item.quantity, "unit": item.unit}
             for item in inventory
         }
 
-        # 3. Filtrer les recettes
         feasible_recipes = []
 
         for recipe in all_recipes:
-            # RG14: Vérifier les restrictions alimentaires
             if not self._check_dietary_restrictions(recipe, user):
                 continue
 
-            # Vérifier si tous les ingrédients sont disponibles
             can_make, missing_ingredients = self._check_ingredients_availability(
                 recipe, available_products
             )
@@ -85,7 +81,6 @@ class RecipeService:
                 }
             )
 
-        # Trier par pourcentage de correspondance (recettes les plus faisables en premier)
         feasible_recipes.sort(key=lambda x: x["match_percentage"], reverse=True)
 
         return feasible_recipes
@@ -95,7 +90,6 @@ class RecipeService:
         if not user.dietary_restrictions:
             return True
 
-        # Récupérer les ingrédients de la recette
         ingredients = (
             self.db.query(RecipeIngredient)
             .filter(RecipeIngredient.recipe_id == recipe.id)
@@ -110,7 +104,6 @@ class RecipeService:
             )
 
             if product and product.tags:
-                # Vérifier si un tag de l'ingrédient viole une restriction
                 for restriction in user.dietary_restrictions:
                     if restriction.lower() in [tag.lower() for tag in product.tags]:
                         return False
@@ -133,7 +126,6 @@ class RecipeService:
             available = available_products.get(ingredient.product_id)
 
             if not available:
-                # Produit complètement absent
                 product = (
                     self.db.query(Product)
                     .filter(Product.id == ingredient.product_id)
@@ -150,7 +142,6 @@ class RecipeService:
                     }
                 )
             elif available["quantity"] < ingredient.quantity:
-                # Quantité insuffisante
                 product = (
                     self.db.query(Product)
                     .filter(Product.id == ingredient.product_id)

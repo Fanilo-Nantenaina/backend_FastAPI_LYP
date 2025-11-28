@@ -12,7 +12,7 @@ router = APIRouter(prefix="/products", tags=["Products"])
 
 
 @router.get("", response_model=List[ProductResponse])
-async def list_products(
+def list_products(
     db: Session = Depends(get_db),
     search: Optional[str] = None,
     category: Optional[str] = None,
@@ -22,7 +22,6 @@ async def list_products(
     query = db.query(Product)
 
     if search:
-        # Recherche insensible à la casse dans le nom
         query = query.filter(Product.name.ilike(f"%{search}%"))
 
     if category:
@@ -32,15 +31,14 @@ async def list_products(
 
 
 @router.post("", response_model=ProductResponse, status_code=201)
-async def create_product(
+def create_product(
     request: ProductCreate,
     current_user: User = Depends(
         get_current_user
-    ),  # On suppose que seuls les admins/utilisateurs authentifiés peuvent créer des produits
+    ),
     db: Session = Depends(get_db),
 ):
     """Créer un nouveau produit"""
-    # Note : Vérification de l'unicité du produit (ex: par code-barres) pourrait être ajoutée ici
     product = Product(**request.dict())
     db.add(product)
     db.commit()
@@ -49,7 +47,7 @@ async def create_product(
 
 
 @router.get("/{product_id}", response_model=ProductResponse)
-async def get_product(product_id: int, db: Session = Depends(get_db)):
+def get_product(product_id: int, db: Session = Depends(get_db)):
     """Récupérer un produit spécifique"""
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
@@ -60,7 +58,7 @@ async def get_product(product_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/{product_id}", response_model=ProductResponse)
-async def update_product(
+def update_product(
     product_id: int,
     request: ProductUpdate,
     current_user: User = Depends(
@@ -85,7 +83,7 @@ async def update_product(
 
 
 @router.delete("/{product_id}", status_code=204)
-async def delete_product(
+def delete_product(
     product_id: int,
     current_user: User = Depends(
         get_current_user

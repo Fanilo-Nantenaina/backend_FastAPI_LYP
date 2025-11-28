@@ -20,7 +20,7 @@ router = APIRouter(prefix="/fridges/{fridge_id}/inventory", tags=["Inventory"])
 
 
 @router.get("", response_model=List[InventoryItemResponse])
-async def list_inventory(
+def list_inventory(
     fridge: Fridge = Depends(get_user_fridge),
     db: Session = Depends(get_db),
     active_only: bool = True,
@@ -35,18 +35,16 @@ async def list_inventory(
 
 
 @router.post("", response_model=InventoryItemResponse, status_code=201)
-async def add_inventory_item(
+def add_inventory_item(
     request: InventoryItemCreate,
     fridge: Fridge = Depends(get_user_fridge),
     db: Session = Depends(get_db),
 ):
     """CU2: Enregistrer un Article manuellement"""
-    # Vérifier/créer le produit
     product = db.query(Product).filter(Product.id == request.product_id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    # Créer l'item d'inventaire (RG4)
     inventory_item = InventoryItem(
         fridge_id=fridge.id,
         product_id=product.id,
@@ -61,7 +59,6 @@ async def add_inventory_item(
     db.add(inventory_item)
     db.flush()
 
-    # Créer un événement (RG5)
     event = Event(
         fridge_id=fridge.id,
         inventory_item_id=inventory_item.id,
@@ -81,7 +78,7 @@ async def add_inventory_item(
 
 
 @router.put("/{item_id}", response_model=InventoryItemResponse)
-async def update_inventory_item(
+def update_inventory_item(
     item_id: int,
     request: InventoryItemUpdate,
     fridge: Fridge = Depends(get_user_fridge),
@@ -98,7 +95,6 @@ async def update_inventory_item(
         raise HTTPException(status_code=404, detail="Inventory item not found")
 
     if request.quantity is not None:
-        # RG9: La quantité ne peut être négative
         if request.quantity < 0:
             raise HTTPException(status_code=400, detail="Quantity cannot be negative")
         item.quantity = request.quantity
@@ -115,7 +111,7 @@ async def update_inventory_item(
 
 
 @router.post("/{item_id}/consume", response_model=InventoryItemResponse)
-async def consume_item(
+def consume_item(
     item_id: int,
     request: ConsumeItemRequest,
     fridge: Fridge = Depends(get_user_fridge),
@@ -131,7 +127,6 @@ async def consume_item(
     if not item:
         raise HTTPException(status_code=404, detail="Inventory item not found")
 
-    # RG9: Vérifier qu'on ne va pas en dessous de zéro
     new_quantity = item.quantity - request.quantity_consumed
     if new_quantity < 0:
         raise HTTPException(
@@ -139,13 +134,11 @@ async def consume_item(
             detail=f"Cannot consume more than available ({item.quantity} {item.unit})",
         )
 
-    # RG8: Si consommation partielle et pas de open_date, la définir
     if new_quantity > 0 and not item.open_date:
         item.open_date = date.today()
 
     item.quantity = new_quantity
 
-    # Créer un événement
     event = Event(
         fridge_id=fridge.id,
         inventory_item_id=item.id,
@@ -164,7 +157,7 @@ async def consume_item(
 
 
 @router.delete("/{item_id}", status_code=204)
-async def remove_inventory_item(
+def remove_inventory_item(
     item_id: int,
     fridge: Fridge = Depends(get_user_fridge),
     db: Session = Depends(get_db),
@@ -179,7 +172,6 @@ async def remove_inventory_item(
     if not item:
         raise HTTPException(status_code=404, detail="Inventory item not found")
 
-    # Créer un événement de suppression
     event = Event(
         fridge_id=fridge.id,
         inventory_item_id=item.id,
