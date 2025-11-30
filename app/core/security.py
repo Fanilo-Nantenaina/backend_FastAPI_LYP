@@ -15,7 +15,8 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
+    password_bytes = password.encode("utf-8")[:72]
+    return pwd_context.hash(password_bytes)
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
@@ -44,13 +45,20 @@ def create_refresh_token(data: dict) -> str:
     return encoded_jwt
 
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 def decode_token(token: str) -> dict:
     try:
         payload = jwt.decode(
             token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
         )
+        logger.info(f"✅ Token decoded successfully: {payload}")
         return payload
-    except JWTError:
+    except JWTError as e:
+        logger.error(f"❌ JWT decode error: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
@@ -63,13 +71,29 @@ async def get_current_user_id(
 ) -> int:
     """Extraction de l'ID utilisateur depuis le token JWT"""
     token = credentials.credentials
-    payload = decode_token(token)
+    logger.info(f"🔑 Received token: {token[:50]}...")
 
-    user_id: int = payload.get("sub")
-    if user_id is None:
+    payload = decode_token(token)
+    logger.info(f"📦 Payload: {payload}")
+
+    user_id_str = payload.get("sub")
+    logger.info(f"👤 User ID from payload: {user_id_str} (type: {type(user_id_str)})")
+
+    if user_id_str is None:
+        logger.error("❌ No 'sub' in payload")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials",
+            detail="Invalid authentication credentials - missing 'sub'",
         )
 
-    return user_id
+    # ✅ Convertir la string en int
+    try:
+        user_id = int(user_id_str)
+        logger.info(f"✅ User ID converted to int: {user_id}")
+        return user_id
+    except (ValueError, TypeError) as e:
+        logger.error(f"❌ Error converting user_id: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid user ID format: {str(e)}",
+        )

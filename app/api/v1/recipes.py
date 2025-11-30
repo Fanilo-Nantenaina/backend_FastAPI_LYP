@@ -12,7 +12,6 @@ from app.services.recipe_service import RecipeService
 
 router = APIRouter(prefix="/recipes", tags=["Recipes"])
 
-
 @router.get("", response_model=List[RecipeResponse])
 def list_recipes(
     db: Session = Depends(get_db),

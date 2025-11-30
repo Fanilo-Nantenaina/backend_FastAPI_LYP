@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, JSON, DateTime
+from sqlalchemy import Column, Integer, String, ForeignKey, JSON, DateTime, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.core.database import Base
@@ -6,24 +6,49 @@ from app.core.database import Base
 
 class Fridge(Base):
     """
-    Modèle Fridge - Réfrigérateur
-    RG1: Un utilisateur peut avoir plusieurs frigos
-    RG2: Chaque frigo appartient à un seul utilisateur
+    Modèle Fridge unifié - Représente le frigo physique (kiosk) ET logique
+
+    WORKFLOW SIMPLIFIÉ:
+    1. init_kiosk() : Crée un Fridge avec kiosk_id et pairing_code
+    2. pair_fridge() : Associe le Fridge à un utilisateur
+    3. heartbeat : Maintient la connexion active
+
+    Un Fridge = UN kiosk Samsung physique
     """
 
     __tablename__ = "fridges"
 
+    # Identifiants
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(
-        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
-    name = Column(String, nullable=False)
-    location = Column(String)  # Cuisine, Garage, Bureau, etc.
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True
+    )  # NULL avant pairing
 
-    # Configuration du frigo (seuils d'alerte personnalisés)
+    # Informations utilisateur
+    name = Column(String, nullable=False, default="Mon Frigo")
+    location = Column(String)
+
+    # Informations du kiosk physique
+    kiosk_id = Column(
+        String, unique=True, nullable=False, index=True
+    )  # UUID unique du kiosk
+    device_name = Column(String)  # Nom du kiosk (ex: "Samsung Family Hub")
+
+    # Pairing
+    pairing_code = Column(String, unique=True, index=True)  # Code 6 chiffres temporaire
+    is_paired = Column(Boolean, default=False)
+    paired_at = Column(DateTime)
+
+    # Heartbeat
+    last_heartbeat = Column(DateTime)
+
+    # Métadonnées du kiosk (IP, firmware, etc.)
+    kiosk_metadata = Column(JSON, default=dict)
+
+    # Configuration
     config = Column(JSON, default=dict)
-    # Exemple: {"expiry_warning_days": 3, "lost_item_threshold_hours": 72}
 
+    # Dates
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -41,9 +66,7 @@ class Fridge(Base):
     shopping_lists = relationship(
         "ShoppingList", back_populates="fridge", cascade="all, delete-orphan"
     )
-    devices = relationship(
-        "FridgeDevice", back_populates="fridge", cascade="all, delete-orphan"
-    )
 
     def __repr__(self):
-        return f"<Fridge(id={self.id}, name={self.name}, user_id={self.user_id})>"
+        status = "PAIRED" if self.is_paired else "UNPAIRED"
+        return f"<Fridge(id={self.id}, kiosk_id={self.kiosk_id}, status={status})>"

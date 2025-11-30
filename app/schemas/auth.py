@@ -1,11 +1,11 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List
 
 
 class RegisterRequest(BaseModel):
     email: EmailStr
     name: str
-    password: str
+    password: str = Field(..., min_length=8, max_length=72)
     timezone: Optional[str] = "UTC"
     dietary_restrictions: Optional[List[str]] = None
 

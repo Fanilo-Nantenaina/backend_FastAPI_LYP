@@ -1,10 +1,14 @@
-"""
-Pydantic schemas for request/response validation
-"""
-
 from app.schemas.auth import LoginRequest, RegisterRequest, TokenResponse
 from app.schemas.user import UserResponse, UserUpdateRequest
-from app.schemas.fridge import FridgeCreate, FridgeUpdate, FridgeResponse
+from app.schemas.fridge import (
+    FridgeUpdate,
+    FridgeResponse,
+    KioskInitResponse,
+    KioskStatusResponse,
+    PairingRequest,
+    PairingResponse,
+    UpdateFridgeInfoRequest,
+)
 from app.schemas.product import ProductCreate, ProductUpdate, ProductResponse
 from app.schemas.inventory import (
     InventoryItemCreate,
@@ -30,12 +34,6 @@ from app.schemas.shopping_list import (
     ShoppingListResponse,
     GenerateShoppingListRequest,
 )
-from app.schemas.device import (
-    PairingCodeResponse,
-    PairingRequest,
-    PairingResponse,
-    DeviceResponse,
-)
 
 __all__ = [
     # Auth
@@ -46,9 +44,13 @@ __all__ = [
     "UserResponse",
     "UserUpdateRequest",
     # Fridge
-    "FridgeCreate",
     "FridgeUpdate",
     "FridgeResponse",
+    "KioskInitResponse",
+    "KioskStatusResponse",
+    "PairingRequest",
+    "PairingResponse",
+    "UpdateFridgeInfoRequest",
     # Product
     "ProductCreate",
     "ProductUpdate",
@@ -76,9 +78,4 @@ __all__ = [
     "ShoppingListCreate",
     "ShoppingListResponse",
     "GenerateShoppingListRequest",
-    # Device
-    "PairingCodeResponse",
-    "PairingRequest",
-    "PairingResponse",
-    "DeviceResponse",
 ]

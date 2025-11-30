@@ -14,32 +14,6 @@ class FridgeCreate(BaseModel):
             raise ValueError("Le nom du frigo ne peut pas être vide")
         return v.strip()
 
-    @validator("config")
-    def validate_config(cls, v):
-        """Valider les valeurs de configuration"""
-        if v:
-            # Valider expiry_warning_days
-            if "expiry_warning_days" in v:
-                days = v["expiry_warning_days"]
-                if not isinstance(days, int) or days < 0 or days > 30:
-                    raise ValueError("expiry_warning_days doit être entre 0 et 30")
-
-            # Valider lost_item_threshold_hours
-            if "lost_item_threshold_hours" in v:
-                hours = v["lost_item_threshold_hours"]
-                if not isinstance(hours, (int, float)) or hours < 0 or hours > 720:
-                    raise ValueError(
-                        "lost_item_threshold_hours doit être entre 0 et 720 (30 jours)"
-                    )
-
-            # Valider low_stock_threshold
-            if "low_stock_threshold" in v:
-                threshold = v["low_stock_threshold"]
-                if not isinstance(threshold, (int, float)) or threshold < 0:
-                    raise ValueError("low_stock_threshold doit être positif")
-
-        return v
-
 
 class FridgeUpdate(BaseModel):
     name: Optional[str] = None
@@ -49,11 +23,74 @@ class FridgeUpdate(BaseModel):
 
 class FridgeResponse(BaseModel):
     id: int
-    user_id: int
+    user_id: Optional[int]
     name: str
     location: Optional[str]
+    kiosk_id: str
+    is_paired: bool
     config: Optional[Dict[str, Any]]
     created_at: datetime
 
     class Config:
         from_attributes = True
+
+
+# ========================================
+# SCHÉMAS KIOSK
+# ========================================
+
+
+class KioskInitResponse(BaseModel):
+    """Réponse après initialisation du kiosk"""
+
+    kiosk_id: str
+    pairing_code: str
+    expires_in_minutes: int
+
+
+class KioskStatusResponse(BaseModel):
+    """Statut d'un kiosk"""
+
+    kiosk_id: str
+    is_paired: bool
+    fridge_id: Optional[int]
+    fridge_name: Optional[str]
+    last_heartbeat: Optional[str]
+    paired_at: Optional[str]
+
+
+# ========================================
+# SCHÉMAS CLIENT
+# ========================================
+
+
+class PairingRequest(BaseModel):
+    """Requête de pairing depuis le client mobile"""
+
+    pairing_code: str = Field(
+        ...,
+        min_length=6,
+        max_length=6,
+        description="Code 6 chiffres affiché sur le kiosk",
+    )
+    fridge_name: Optional[str] = Field(None, description="Nom personnalisé du frigo")
+    fridge_location: Optional[str] = Field(
+        None, description="Localisation (cuisine, garage, etc.)"
+    )
+
+
+class PairingResponse(BaseModel):
+    """Réponse après pairing réussi"""
+
+    fridge_id: int
+    fridge_name: str
+    fridge_location: Optional[str]
+    kiosk_id: str
+    access_token: str
+
+
+class UpdateFridgeInfoRequest(BaseModel):
+    """Modification du nom/localisation après pairing"""
+
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    location: Optional[str] = Field(None, max_length=100)

@@ -1,50 +1,240 @@
+# ==================================================
+# services/fridge_service.py - VERSION REFACTORISÉE COMPLÈTE
+# ==================================================
+
 from sqlalchemy.orm import Session
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
+import secrets
+import string
+import uuid
 
 from app.middleware.transaction_handler import transactional
 from app.models.fridge import Fridge
 from app.models.inventory import InventoryItem
 from app.models.alert import Alert
 from app.models.event import Event
+from app.core.config import settings
+from app.core.security import create_access_token
 
 logger = logging.getLogger(__name__)
 
 
 class FridgeService:
-    """Service de gestion des réfrigérateurs"""
+    """
+    Service unifié de gestion des réfrigérateurs et du pairing kiosk
+
+    WORKFLOW COMPLET :
+    1. init_kiosk() : Démarre un nouveau kiosk
+    2. pair_fridge() : Lie le kiosk à un utilisateur
+    3. update_heartbeat() : Maintient la connexion active
+    4. unpair_fridge() : Délie le kiosk
+    """
 
     def __init__(self, db: Session):
         self.db = db
 
+    # ========================================
+    # MÉTHODES KIOSK (appelées par le frigo Samsung)
+    # ========================================
+
     @transactional
-    def create_fridge(
-        self,
-        user_id: int,
-        name: str,
-        location: Optional[str] = None,
-        config: Optional[Dict[str, Any]] = None,
-    ) -> Fridge:
-        """RG1: Crée un nouveau frigo pour un utilisateur"""
+    def init_kiosk(self, device_name: Optional[str] = None) -> Dict:
+        """
+        ✅ ÉTAPE 1 : Initialise un nouveau kiosk (frigo physique)
+
+        Appelé au démarrage du kiosk Samsung.
+        Génère un code de pairing et l'affiche sur l'écran.
+
+        Returns:
+            {
+                "kiosk_id": "uuid",
+                "pairing_code": "123456",
+                "expires_in_minutes": 5
+            }
+        """
+        kiosk_id = str(uuid.uuid4())
+        pairing_code = "".join(secrets.choice(string.digits) for _ in range(6))
+
         fridge = Fridge(
-            user_id=user_id,
-            name=name,
-            location=location,
-            config=config
-            or {
-                "expiry_warning_days": 3,
-                "lost_item_threshold_hours": 72,
-                "low_stock_threshold": 2.0,
-            },
+            kiosk_id=kiosk_id,
+            device_name=device_name or "Smart Fridge Kiosk",
+            pairing_code=pairing_code,
+            is_paired=False,
+            user_id=None,
+            name="Mon Frigo",  # Nom par défaut
         )
 
         self.db.add(fridge)
-        # self.db.commit()
-        self.db.refresh(fridge)
 
-        logger.info(f"Fridge created: {fridge.id} for user {user_id}")
-        return fridge
+        logger.info(f"Kiosk initialized: {kiosk_id}")
+
+        return {
+            "kiosk_id": kiosk_id,
+            "pairing_code": pairing_code,
+            "expires_in_minutes": settings.DEVICE_PAIRING_TIMEOUT_MINUTES,
+        }
+
+    @transactional
+    def update_heartbeat(self, kiosk_id: str):
+        """
+        ✅ ÉTAPE 3 : Heartbeat du kiosk (appelé toutes les 30s)
+
+        Maintient la connexion active et permet de détecter
+        les kiosks déconnectés.
+        """
+        fridge = self.db.query(Fridge).filter(Fridge.kiosk_id == kiosk_id).first()
+
+        if fridge:
+            fridge.last_heartbeat = datetime.utcnow()
+            logger.debug(f"Heartbeat updated for kiosk {kiosk_id}")
+
+    def get_fridge_status(self, kiosk_id: str) -> Optional[Dict]:
+        """
+        Récupère le statut d'un kiosk
+        Le kiosk poll cette route toutes les 5s après génération du code.
+        """
+        fridge = self.db.query(Fridge).filter(Fridge.kiosk_id == kiosk_id).first()
+
+        if not fridge:
+            return None
+
+        return {
+            "kiosk_id": fridge.kiosk_id,
+            "is_paired": fridge.is_paired,
+            "fridge_id": fridge.id if fridge.is_paired else None,
+            "fridge_name": fridge.name if fridge.is_paired else None,
+            "last_heartbeat": (
+                fridge.last_heartbeat.isoformat() if fridge.last_heartbeat else None
+            ),
+            "paired_at": fridge.paired_at.isoformat() if fridge.paired_at else None,
+        }
+
+    # ========================================
+    # MÉTHODES CLIENT (appelées par l'app mobile)
+    # ========================================
+
+    @transactional
+    def pair_fridge(
+        self,
+        pairing_code: str,
+        user_id: int,
+        fridge_name: str = "Mon Frigo",
+        fridge_location: Optional[str] = None,
+    ) -> Optional[Dict]:
+        """
+        ✅ ÉTAPE 2 : Lie un kiosk existant à un utilisateur
+
+        Le kiosk affiche un code, l'utilisateur le scanne/entre.
+        Cette méthode associe le frigo à l'utilisateur.
+
+        Args:
+            pairing_code: Code 6 chiffres affiché sur le kiosk
+            user_id: ID de l'utilisateur qui scanne
+            fridge_name: Nom personnalisé du frigo
+            fridge_location: Localisation (cuisine, garage, etc.)
+
+        Returns:
+            {
+                "fridge_id": int,
+                "fridge_name": str,
+                "kiosk_id": str,
+                "access_token": str (pour le client mobile)
+            }
+        """
+        timeout_minutes = settings.DEVICE_PAIRING_TIMEOUT_MINUTES
+        valid_after = datetime.utcnow() - timedelta(minutes=timeout_minutes)
+
+        # Trouver le kiosk non pairé avec ce code
+        fridge = (
+            self.db.query(Fridge)
+            .filter(
+                Fridge.pairing_code == pairing_code,
+                Fridge.is_paired == False,
+                Fridge.created_at >= valid_after,
+            )
+            .first()
+        )
+
+        if not fridge:
+            logger.warning(f"Pairing failed: invalid or expired code {pairing_code}")
+            return None
+
+        # ✅ Associer le frigo à l'utilisateur
+        fridge.user_id = user_id
+        fridge.name = fridge_name
+        fridge.location = fridge_location
+        fridge.is_paired = True
+        fridge.paired_at = datetime.utcnow()
+        fridge.pairing_code = None  # Effacer le code
+        fridge.last_heartbeat = datetime.utcnow()
+
+        # Configuration par défaut
+        if not fridge.config:
+            fridge.config = {
+                "expiry_warning_days": 3,
+                "lost_item_threshold_hours": 72,
+                "low_stock_threshold": 2.0,
+            }
+
+        # Générer un token pour le client mobile
+        access_token = create_access_token(
+            {
+                "sub": str(user_id),
+                "fridge_id": fridge.id,
+            }
+        )
+
+        logger.info(f"Fridge paired: {fridge.id} to user {user_id}")
+
+        return {
+            "fridge_id": fridge.id,
+            "fridge_name": fridge.name,
+            "fridge_location": fridge.location,
+            "kiosk_id": fridge.kiosk_id,
+            "access_token": access_token,
+        }
+
+    @transactional
+    def unpair_fridge(self, fridge_id: int, user_id: int) -> bool:
+        """
+        Délie un kiosk (reset le frigo à l'état unpaired)
+
+        ⚠️ ATTENTION : Supprime également l'inventaire !
+        """
+        fridge = (
+            self.db.query(Fridge)
+            .filter(Fridge.id == fridge_id, Fridge.user_id == user_id)
+            .first()
+        )
+
+        if not fridge:
+            return False
+
+        # Le kiosk retourne en mode "unpaired"
+        fridge.is_paired = False
+        fridge.user_id = None
+        fridge.paired_at = None
+        fridge.name = "Mon Frigo"
+        fridge.location = None
+
+        # Générer un nouveau code
+        fridge.pairing_code = "".join(secrets.choice(string.digits) for _ in range(6))
+
+        # Supprimer l'inventaire (cascade)
+        self.db.query(InventoryItem).filter(
+            InventoryItem.fridge_id == fridge_id
+        ).delete()
+        self.db.query(Alert).filter(Alert.fridge_id == fridge_id).delete()
+
+        logger.info(f"Fridge unpaired: {fridge_id}")
+
+        return True
+
+    # ========================================
+    # MÉTHODES DE GESTION STANDARD
+    # ========================================
 
     def get_fridge_by_id(
         self, fridge_id: int, user_id: Optional[int] = None
@@ -93,16 +283,13 @@ class FridgeService:
             current_config.update(config)
             fridge.config = current_config
 
-        # self.db.commit()
-        self.db.refresh(fridge)
-
         logger.info(f"Fridge updated: {fridge_id}")
         return fridge
 
     @transactional
     def delete_fridge(self, fridge_id: int, user_id: int) -> bool:
         """
-        Supprime un frigo (RG2: vérifie la propriété)
+        Supprime un frigo complètement (RG2: vérifie la propriété)
 
         Note: Cascade supprime automatiquement inventory, events, alerts
         """
@@ -112,7 +299,6 @@ class FridgeService:
             return False
 
         self.db.delete(fridge)
-        # self.db.commit()
 
         logger.info(f"Fridge deleted: {fridge_id}")
         return True
@@ -136,8 +322,6 @@ class FridgeService:
             .count()
         )
 
-        from datetime import timedelta
-
         month_ago = datetime.utcnow() - timedelta(days=30)
         recent_events = (
             self.db.query(Event)
@@ -153,8 +337,8 @@ class FridgeService:
         )
 
         for item in items:
-            if item.metadata and "price" in item.metadata:
-                total_value += item.metadata["price"] * item.quantity
+            if item.extra_data and "price" in item.extra_data:
+                total_value += item.extra_data["price"] * item.quantity
 
         return {
             "fridge_id": fridge_id,

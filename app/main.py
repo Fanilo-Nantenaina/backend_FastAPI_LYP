@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 
 from app.core.config import settings
@@ -19,7 +20,6 @@ from app.api.v1 import (
     recipes,
     shopping_lists,
     events,
-    devices,
 )
 
 
@@ -67,7 +67,6 @@ app.include_router(alerts.router, prefix="/api/v1")
 app.include_router(recipes.router, prefix="/api/v1")
 app.include_router(shopping_lists.router, prefix="/api/v1")
 app.include_router(events.router, prefix="/api/v1")
-app.include_router(devices.router, prefix="/api/v1")
 
 
 @app.exception_handler(FridgeNotFoundError)

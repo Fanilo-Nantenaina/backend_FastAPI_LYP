@@ -17,7 +17,7 @@ pydantic[email]
 # Security & Auth
 python-jose[cryptography]
 passlib[bcrypt]
-bcrypt
+bcrypt==4.2.0
 
 # Google Gemini
 google-genai
