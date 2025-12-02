@@ -6,9 +6,16 @@ from app.core.security import (
     get_password_hash,
     create_access_token,
     create_refresh_token,
+    decode_token,
 )
 from app.models.user import User
 from app.schemas.auth import LoginRequest, TokenResponse, RegisterRequest
+from pydantic import BaseModel
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -33,7 +40,6 @@ def register(request: RegisterRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
 
-    # ✅ CONVERTIR EN STRING
     access_token = create_access_token({"sub": str(user.id)})
     refresh_token = create_refresh_token({"sub": str(user.id)})
 
@@ -55,7 +61,6 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
             detail="Incorrect email or password",
         )
 
-    # ✅ CONVERTIR EN STRING
     access_token = create_access_token({"sub": str(user.id)})
     refresh_token = create_refresh_token({"sub": str(user.id)})
 
@@ -64,3 +69,58 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
         "refresh_token": refresh_token,
         "token_type": "bearer",
     }
+
+
+@router.post("/refresh", response_model=TokenResponse)
+def refresh_token(request: RefreshRequest, db: Session = Depends(get_db)):
+    """
+    ✅ NOUVEAU: Refresh du token d'accès
+
+    Permet au client de renouveler son access_token expiré
+    sans avoir à se reconnecter
+    """
+    try:
+        # Décoder le refresh token
+        payload = decode_token(request.refresh_token)
+
+        # Vérifier que c'est bien un refresh token
+        if payload.get("type") != "refresh":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token type",
+            )
+
+        # Récupérer l'utilisateur
+        user_id_str = payload.get("sub")
+        if not user_id_str:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token payload",
+            )
+
+        user_id = int(user_id_str)
+        user = db.query(User).filter(User.id == user_id).first()
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found",
+            )
+
+        # Générer de nouveaux tokens
+        new_access_token = create_access_token({"sub": str(user.id)})
+        new_refresh_token = create_refresh_token({"sub": str(user.id)})
+
+        return {
+            "access_token": new_access_token,
+            "refresh_token": new_refresh_token,
+            "token_type": "bearer",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Token refresh failed: {str(e)}",
+        )

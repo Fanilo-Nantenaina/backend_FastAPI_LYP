@@ -12,15 +12,39 @@ def transactional(func):
     """
 
     @wraps(func)
-    def wrapper(self, *args, **kwargs):
+    async def async_wrapper(self, *args, **kwargs):
+        db: Session = self.db
+        try:
+            result = await func(self, *args, **kwargs)
+            db.commit()  # ✅ Commit automatique
+            logger.info(f"✅ Transaction committed in {func.__name__}")
+            return result
+        except Exception as e:
+            db.rollback()
+            logger.error(
+                f"❌ Transaction failed in {func.__name__}: {e}", exc_info=True
+            )
+            raise
+
+    @wraps(func)
+    def sync_wrapper(self, *args, **kwargs):
         db: Session = self.db
         try:
             result = func(self, *args, **kwargs)
             db.commit()
+            logger.info(f"✅ Transaction committed in {func.__name__}")
             return result
         except Exception as e:
             db.rollback()
-            logger.error(f"Transaction failed in {func.__name__}: {e}", exc_info=True)
+            logger.error(
+                f"❌ Transaction failed in {func.__name__}: {e}", exc_info=True
+            )
             raise
 
-    return wrapper
+    # ✅ Retourner le bon wrapper selon le type de fonction
+    import asyncio
+
+    if asyncio.iscoroutinefunction(func):
+        return async_wrapper
+    else:
+        return sync_wrapper

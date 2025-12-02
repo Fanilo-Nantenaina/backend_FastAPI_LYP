@@ -282,7 +282,7 @@ class AlertService:
             self.db.add(event)
 
         self.db.add(alert)
-        # self.db.commit()
+        self.db.commit()
         self.db.refresh(alert)
 
         logger.info(f"Created alert: {alert_type} for item {inventory_item_id}")
@@ -365,7 +365,7 @@ class AlertService:
         )
         self.db.add(event)
 
-        # self.db.commit()
+        self.db.commit()
         logger.info(f"Alert {alert_id} resolved by user {user_id}")
         return True
 
@@ -398,7 +398,7 @@ class AlertService:
         for alert in alerts:
             alert.status = "resolved"
 
-        # self.db.commit()
+        self.db.commit()
         logger.info(f"Bulk resolved {count} alerts for fridge {fridge_id}")
         return count
 
@@ -426,7 +426,7 @@ class AlertService:
         for alert in old_alerts:
             self.db.delete(alert)
 
-        # self.db.commit()
+        self.db.commit()
         logger.info(f"Deleted {count} old alerts")
         return count
 

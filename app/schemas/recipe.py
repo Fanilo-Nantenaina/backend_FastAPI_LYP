@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, validator, model_validator
+from pydantic import BaseModel, Field, validator
 from typing import List, Optional, Dict, Any
 
 
@@ -13,9 +13,9 @@ class RecipeCreate(BaseModel):
     description: Optional[str] = Field(None, max_length=1000)
     steps: Optional[str] = Field(None, max_length=5000)
     preparation_time: Optional[int] = Field(None, ge=0, le=1440)  # Max 24h
-    difficulty: Optional[str] = Field(None, pattern="^(easy|medium|hard)$")  # <--- ici
+    difficulty: Optional[str] = Field(None, pattern="^(easy|medium|hard)$")
     extra_data: Optional[Dict[str, Any]] = None
-    ingredients: List[RecipeIngredientCreate] = Field(..., min_items=1)
+    ingredients: List[RecipeIngredientCreate] = Field(..., min_length=1)
 
     @validator("title")
     def validate_title(cls, v):
@@ -62,3 +62,75 @@ class FeasibleRecipeResponse(BaseModel):
     can_make: bool
     missing_ingredients: List[Dict[str, Any]]
     match_percentage: float
+
+
+# ========================================
+# NOUVEAUX SCHÉMAS POUR LA SUGGESTION IA
+# ========================================
+
+
+class SuggestedIngredient(BaseModel):
+    """Ingrédient suggéré par l'IA"""
+
+    name: str
+    quantity: float
+    unit: str
+    is_available: Optional[bool] = None
+
+
+class MissingIngredient(BaseModel):
+    """Ingrédient manquant pour une recette"""
+
+    name: str
+    quantity: Optional[float] = None
+    unit: Optional[str] = None
+
+
+class SuggestedRecipeResponse(BaseModel):
+    """Réponse de suggestion de recette par l'IA"""
+
+    title: str
+    description: str
+    ingredients: List[Dict[str, Any]]
+    steps: str
+    preparation_time: int
+    difficulty: str
+    available_ingredients: List[str]
+    missing_ingredients: List[Dict[str, Any]]
+    match_percentage: float
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "title": "Omelette aux légumes",
+                "description": "Une délicieuse omelette garnie de légumes frais",
+                "ingredients": [
+                    {
+                        "name": "Œufs",
+                        "quantity": 3,
+                        "unit": "pièces",
+                        "is_available": True,
+                    },
+                    {
+                        "name": "Tomates",
+                        "quantity": 2,
+                        "unit": "pièces",
+                        "is_available": True,
+                    },
+                    {
+                        "name": "Oignon",
+                        "quantity": 1,
+                        "unit": "pièce",
+                        "is_available": False,
+                    },
+                ],
+                "steps": "1. Battre les œufs...\n2. Couper les légumes...",
+                "preparation_time": 15,
+                "difficulty": "easy",
+                "available_ingredients": ["Œufs", "Tomates"],
+                "missing_ingredients": [
+                    {"name": "Oignon", "quantity": 1, "unit": "pièce"}
+                ],
+                "match_percentage": 66.7,
+            }
+        }

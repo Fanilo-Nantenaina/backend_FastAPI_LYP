@@ -1,19 +1,20 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import Dict, Any, AsyncGenerator
 from datetime import datetime
+from sse_starlette.sse import EventSourceResponse
+import asyncio
+import json
 
 from app.core.database import get_db
 from app.core.dependencies import get_user_fridge
 from app.models.fridge import Fridge
 from app.models.event import Event
-from app.schemas.event import EventResponse
-from typing import Dict, Any
+from app.core.database import SessionLocal
 
 router = APIRouter(prefix="/fridges/{fridge_id}/events", tags=["Events"])
 
 
-# @router.get("", response_model=List[EventResponse])
 @router.get("", response_model=Dict[str, Any])
 def list_events(
     fridge: Fridge = Depends(get_user_fridge),
@@ -42,46 +43,66 @@ def list_events(
 @router.get("/all")
 async def stream_fridge_events(
     fridge: Fridge = Depends(get_user_fridge),
-    db: Session = Depends(get_db),
 ):
     """
-    📡 STREAM SSE (Server-Sent Events)
+    Stream SSE des événements du frigo
 
-    Le client mobile s'abonne à ce stream pour recevoir
-    les mises à jour en temps réel de l'inventaire.
-
-    Événements envoyés :
-    - INVENTORY_UPDATED : Nouveau scan vision
-    - ITEM_CONSUMED : Produit consommé
-    - ALERT_CREATED : Nouvelle alerte
-    - ITEM_EXPIRED : Produit périmé
-
-    Usage Flutter :
-    ```dart
-    final eventSource = EventSource(
-      url: '$baseUrl/realtime/fridges/$fridgeId/events',
-      headers: {'Authorization': 'Bearer $token'},
-    );
-
-    eventSource.listen((event) {
-      if (event.event == 'INVENTORY_UPDATED') {
-        _loadInventory();  // Recharger l'inventaire
-      }
-    });
-    ```
+    CORRIGÉ:
+    - Envoie seulement les NOUVEAUX événements (pas de répétition)
+    - Garde trace du dernier event_id envoyé
+    - Pas de regroupement artificiel qui cause des doublons
     """
 
     async def event_generator() -> AsyncGenerator[dict, None]:
         last_event_id = 0
 
+        RELEVANT_EVENTS = {
+            "ITEM_ADDED",
+            "ITEM_CONSUMED",
+            "ITEM_REMOVED",
+            "ITEM_DETECTED",
+            "QUANTITY_UPDATED",
+            "ALERT_CREATED",
+            "ITEM_EXPIRED",
+        }
+
+        db_init: Session = SessionLocal()
+        try:
+            last_event = (
+                db_init.query(Event)
+                .filter(Event.fridge_id == fridge.id)
+                .order_by(Event.id.desc())
+                .first()
+            )
+            if last_event:
+                last_event_id = last_event.id
+        finally:
+            db_init.close()
+
+        # ✅ CORRECTION: Tous les champs doivent être des strings valides
+        yield {
+            "event": "connected",
+            "id": "0",
+            "data": json.dumps(
+                {
+                    "type": "CONNECTED",  # ✅ Ajout du type
+                    "message": "Connexion SSE établie",
+                    "fridge_id": fridge.id,
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "payload": {}  # ✅ Ajout du payload vide
+                }
+            ),
+        }
+
         while True:
+            db_local: Session = SessionLocal()
             try:
-                # Récupérer les nouveaux événements
                 new_events = (
-                    db.query(Event)
+                    db_local.query(Event)
                     .filter(
                         Event.fridge_id == fridge.id,
                         Event.id > last_event_id,
+                        Event.type.in_(RELEVANT_EVENTS),
                     )
                     .order_by(Event.id.asc())
                     .limit(10)
@@ -89,42 +110,96 @@ async def stream_fridge_events(
                 )
 
                 for event in new_events:
-                    # Filtrer les événements pertinents pour le client
-                    if event.type in [
-                        "INVENTORY_UPDATED",
-                        "ITEM_ADDED",
-                        "ITEM_CONSUMED",
-                        "ITEM_DETECTED",
-                        "ALERT_CREATED",
-                        "ITEM_EXPIRED",
-                    ]:
-                        yield {
-                            "event": event.type,
-                            "id": str(event.id),
-                            "data": json.dumps(
-                                {
-                                    "event_id": event.id,
-                                    "type": event.type,
-                                    "payload": event.payload,
-                                    "timestamp": event.created_at.isoformat(),
-                                }
-                            ),
-                        }
+                    last_event_id = event.id
 
-                        last_event_id = event.id
+                    # ✅ CORRECTION: S'assurer que payload n'est jamais None
+                    payload = event.payload if event.payload is not None else {}
 
-                # Attendre 2 secondes avant la prochaine vérification
-                await asyncio.sleep(2)
+                    # ✅ CORRECTION: S'assurer que le message n'est jamais None
+                    message = _generate_event_message(event.type, payload)
+                    if message is None:
+                        message = "Mise à jour de l'inventaire"
+
+                    # ✅ CORRECTION: S'assurer que le type n'est jamais None
+                    event_type = event.type if event.type else "INVENTORY_UPDATED"
+
+                    yield {
+                        "event": event_type,
+                        "id": str(event.id),
+                        "data": json.dumps(
+                            {
+                                "event_id": event.id,
+                                "type": event_type,
+                                "message": message,
+                                "payload": payload,
+                                "timestamp": event.created_at.isoformat() if event.created_at else datetime.utcnow().isoformat(),
+                            }
+                        ),
+                    }
 
             except Exception as e:
-                # En cas d'erreur, envoyer un événement d'erreur et continuer
                 yield {
                     "event": "error",
-                    "data": json.dumps({"error": str(e)}),
+                    "id": str(last_event_id),
+                    "data": json.dumps(
+                        {
+                            "type": "ERROR",
+                            "message": "Erreur interne",
+                            "error": str(e),
+                            "payload": {},
+                            "timestamp": datetime.utcnow().isoformat(),
+                        }
+                    ),
                 }
-                await asyncio.sleep(5)
+
+            finally:
+                db_local.close()
+
+            await asyncio.sleep(3)
+
+
+    def _generate_event_message(event_type: str, payload: dict) -> str:
+        """Génère un message lisible pour chaque type d'événement"""
+        # ✅ CORRECTION: Gestion des valeurs None
+        if payload is None:
+            payload = {}
+        
+        product_name = payload.get("product_name") or "Produit"
+        quantity = payload.get("quantity") or ""
+        unit = payload.get("unit") or ""
+
+        messages = {
+            "ITEM_ADDED": f"{product_name} ajouté ({quantity} {unit})".strip(),
+            "ITEM_CONSUMED": f"{product_name} consommé",
+            "ITEM_REMOVED": f"{product_name} supprimé",
+            "ITEM_DETECTED": f"{product_name} détecté par scan",
+            "QUANTITY_UPDATED": f"Quantité de {product_name} mise à jour",
+            "ALERT_CREATED": "Nouvelle alerte créée",
+            "ITEM_EXPIRED": f"{product_name} a expiré",
+        }
+
+        return messages.get(event_type, "Mise à jour de l'inventaire")
 
     return EventSourceResponse(event_generator())
+
+
+def _generate_event_message(event_type: str, payload: dict) -> str:
+    """Génère un message lisible pour chaque type d'événement"""
+    product_name = payload.get("product_name", "Produit")
+    quantity = payload.get("quantity", "")
+    unit = payload.get("unit", "")
+
+    messages = {
+        "ITEM_ADDED": f"{product_name} ajouté ({quantity} {unit})".strip(),
+        "ITEM_CONSUMED": f"{product_name} consommé",
+        "ITEM_REMOVED": f"{product_name} supprimé",
+        "ITEM_DETECTED": f"{product_name} détecté par scan",
+        "QUANTITY_UPDATED": f"Quantité de {product_name} mise à jour",
+        "ALERT_CREATED": "Nouvelle alerte créée",
+        "ITEM_EXPIRED": f"{product_name} a expiré",
+    }
+
+    return messages.get(event_type, "Mise à jour de l'inventaire")
 
 
 @router.post("/notify")
@@ -133,22 +208,10 @@ async def notify_inventory_update(
     db: Session = Depends(get_db),
 ):
     """
-    🔵 KIOSK ROUTE
-
-    Appelée par le kiosk après un scan vision réussi.
-    Crée un événement "INVENTORY_UPDATED" qui sera
-    diffusé aux clients mobiles connectés via SSE.
+    KIOSK ROUTE - Les événements sont déjà créés par les autres services
+    Cette route est juste un accusé de réception
     """
-    from app.services.event_service import EventService
-
-    event_service = EventService(db)
-    event_service.create_event(
-        fridge_id=fridge.id,
-        event_type="INVENTORY_UPDATED",
-        payload={
-            "source": "vision_scan",
-            "timestamp": datetime.utcnow().isoformat(),
-        },
-    )
-
-    return {"message": "Notification sent"}
+    return {
+        "message": "Notification acknowledged",
+        "note": "Events are created automatically by services",
+    }

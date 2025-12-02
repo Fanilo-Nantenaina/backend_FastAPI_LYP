@@ -75,7 +75,7 @@ class InventoryService:
         )
         self.db.add(event)
 
-        # self.db.commit()
+        self.db.commit()
         self.db.refresh(item)
 
         logger.info(f"Item added to inventory: {item.id} - {product.name}")
@@ -112,7 +112,7 @@ class InventoryService:
         )
         self.db.add(event)
 
-        # self.db.commit()
+        self.db.commit()
         self.db.refresh(item)
 
         return item

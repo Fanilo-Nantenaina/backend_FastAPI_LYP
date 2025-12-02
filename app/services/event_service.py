@@ -48,7 +48,7 @@ class EventService:
         )
 
         self.db.add(event)
-        # self.db.commit()
+        self.db.commit()
         self.db.refresh(event)
 
         logger.debug(f"Event created: {event.type} for fridge {fridge_id}")
@@ -139,7 +139,7 @@ class EventService:
         for event in old_events:
             self.db.delete(event)
 
-        # self.db.commit()
+        self.db.commit()
 
         logger.info(f"Cleaned up {count} old events")
         return count

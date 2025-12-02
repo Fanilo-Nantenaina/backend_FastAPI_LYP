@@ -39,4 +39,4 @@ pytest
 pytest-asyncio
 httpx
 
-# Caching inexistant
+sse-starlette

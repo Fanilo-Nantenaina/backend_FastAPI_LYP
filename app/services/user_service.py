@@ -51,7 +51,7 @@ class UserService:
             )
 
             self.db.add(user)
-            # self.db.commit()
+            self.db.commit()
             self.db.refresh(user)
 
             logger.info(f"User created: {user.id} - {user.email}")
@@ -89,7 +89,7 @@ class UserService:
             current_prefs.update(update_data.prefs)
             user.prefs = current_prefs
 
-        # self.db.commit()
+        self.db.commit()
         self.db.refresh(user)
 
         logger.info(f"User updated: {user.id}")
@@ -117,7 +117,7 @@ class UserService:
             return False
 
         user.password_hash = get_password_hash(new_password)
-        # self.db.commit()
+        self.db.commit()
 
         logger.info(f"Password updated for user {user_id}")
         return True
@@ -135,7 +135,7 @@ class UserService:
             return False
 
         self.db.delete(user)
-        # self.db.commit()
+        self.db.commit()
 
         logger.info(f"User deleted: {user_id}")
         return True
@@ -165,7 +165,7 @@ class UserService:
             return None
 
         user.prefs = preferences
-        # self.db.commit()
+        self.db.commit()
         self.db.refresh(user)
 
         return user

@@ -52,13 +52,17 @@ logger = logging.getLogger(__name__)
 
 def decode_token(token: str) -> dict:
     try:
+        logger.info(f"🔑 Decoding token: {token[:20]}...")  # ✅ LOG
+
         payload = jwt.decode(
             token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
         )
-        logger.info(f"✅ Token decoded successfully: {payload}")
+
+        logger.info(f"✅ Token decoded successfully: {payload}")  # ✅ LOG
         return payload
+
     except JWTError as e:
-        logger.error(f"❌ JWT decode error: {e}")
+        logger.error(f"❌ JWT decode error: {e}")  # ✅ LOG
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",

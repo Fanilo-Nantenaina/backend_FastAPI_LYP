@@ -83,7 +83,7 @@ class ShoppingService:
             )
             self.db.add(item)
 
-        # self.db.commit()
+        self.db.commit()
         self.db.refresh(shopping_list)
 
         logger.info(
@@ -272,18 +272,21 @@ class ShoppingService:
 
     def _suggest_frequent_missing_items(self, fridge_id: int) -> List[Dict[str, Any]]:
         """
-        Suggère les produits qui sont fréquemment ajoutés au frigo
-        mais actuellement absents (produits de base)
+        ✅ CORRIGÉ : Utilise le casting correct pour JSON
+        Suggère les produits fréquemment ajoutés mais actuellement absents
         """
-        from sqlalchemy import Integer, cast
+        from sqlalchemy import Integer, cast, Text
 
+        # ✅ CORRECTION : Cast JSON → TEXT → INTEGER au lieu de jsonb_extract_path_text
         top_products = (
             self.db.query(
-                cast(Event.payload["product_id"].astext, Integer).label("product_id"),
+                cast(cast(Event.payload["product_id"], Text), Integer).label(
+                    "product_id"
+                ),
                 func.count().label("add_count"),
             )
             .filter(Event.fridge_id == fridge_id, Event.type == "ITEM_ADDED")
-            .group_by(Event.payload["product_id"].astext)
+            .group_by(cast(cast(Event.payload["product_id"], Text), Integer))
             .order_by(desc("add_count"))
             .limit(15)
             .all()
@@ -330,7 +333,7 @@ class ShoppingService:
         )
 
         self.db.add(item)
-        # self.db.commit()
+        self.db.commit()
         self.db.refresh(item)
 
         return item
@@ -348,7 +351,7 @@ class ShoppingService:
 
         if item:
             item.status = status
-            # self.db.commit()
+            self.db.commit()
             self.db.refresh(item)
 
         return item
@@ -373,7 +376,7 @@ class ShoppingService:
                 item.status = "purchased"
                 updated_count += 1
 
-        # self.db.commit()
+        self.db.commit()
         return updated_count, len(items)
 
     def optimize_shopping_list(self, shopping_list_id: int) -> Dict[str, Any]:
