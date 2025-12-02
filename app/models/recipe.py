@@ -5,25 +5,17 @@ from app.core.database import Base
 
 
 class Recipe(Base):
-    """
-    Modèle Recipe - Recettes de cuisine
-    CU6: Consulter les Recettes Faisables
-    RG14: Recettes compatibles avec restrictions alimentaires
-    """
+    """Modèle Recipe - Recettes de cuisine"""
 
     __tablename__ = "recipes"
 
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, nullable=False, index=True)
     description = Column(Text)
-    steps = Column(Text)  # Instructions de préparation
-
-    preparation_time = Column(Integer)  # En minutes
-    difficulty = Column(String)  # easy, medium, hard
-
+    steps = Column(Text)
+    preparation_time = Column(Integer)
+    difficulty = Column(String)
     extra_data = Column(JSON, default=dict)
-    # Exemple: {"cuisine": "italian", "servings": 4, "calories": 450}
-
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relations
@@ -33,6 +25,8 @@ class Recipe(Base):
     favorites = relationship(
         "RecipeFavorite", back_populates="recipe", cascade="all, delete-orphan"
     )
+
+    shopping_lists = relationship("ShoppingList", back_populates="recipe")
 
     def __repr__(self):
         return f"<Recipe(id={self.id}, title={self.title})>"

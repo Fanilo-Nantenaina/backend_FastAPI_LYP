@@ -58,10 +58,21 @@ class RecipeResponse(BaseModel):
 
 
 class FeasibleRecipeResponse(BaseModel):
+    """Réponse pour une recette avec infos de faisabilité"""
     recipe: RecipeResponse
     can_make: bool
     missing_ingredients: List[Dict[str, Any]]
     match_percentage: float
+    # ✅ AJOUTER ces champs
+    shopping_list_id: Optional[int] = None
+    shopping_list_status: Optional[str] = None
+    ingredients_complete: bool = False
+    combined_percentage: float = 0.0
+    purchased_missing_count: int = 0
+    total_missing_count: int = 0
+
+    class Config:
+        from_attributes = True
 
 
 # ========================================

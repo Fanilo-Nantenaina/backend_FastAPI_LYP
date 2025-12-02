@@ -1,3 +1,5 @@
+# Dans models/shopping_list.py - Ajoutez le champ recipe_id
+
 from sqlalchemy import Column, Integer, Float, String, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -7,8 +9,7 @@ from app.core.database import Base
 class ShoppingList(Base):
     """
     Modèle ShoppingList - Listes de courses
-    CU4: Générer une Liste de Courses
-    RG13: Une liste appartient à un utilisateur et un frigo
+    ✅ AMÉLIORÉ : Ajout de la relation avec Recipe
     """
 
     __tablename__ = "shopping_lists"
@@ -21,12 +22,22 @@ class ShoppingList(Base):
         Integer, ForeignKey("fridges.id", ondelete="CASCADE"), nullable=False
     )
 
+    # ✅ NOUVEAU : Relation optionnelle avec une recette
+    recipe_id = Column(
+        Integer, ForeignKey("recipes.id", ondelete="SET NULL"), nullable=True
+    )
+
     created_at = Column(DateTime, default=datetime.utcnow)
     generated_by = Column(String)  # 'manual', 'auto_recipe', 'ai_suggestion'
+
+    # ✅ NOUVEAU : Statut de la liste
+    status = Column(String, default="active")  # 'active', 'completed', 'cancelled'
+    completed_at = Column(DateTime, nullable=True)
 
     # Relations
     user = relationship("User", back_populates="shopping_lists")
     fridge = relationship("Fridge", back_populates="shopping_lists")
+    recipe = relationship("Recipe", back_populates="shopping_lists")  # ✅ NOUVEAU
     items = relationship(
         "ShoppingListItem", back_populates="shopping_list", cascade="all, delete-orphan"
     )
@@ -36,10 +47,7 @@ class ShoppingList(Base):
 
 
 class ShoppingListItem(Base):
-    """
-    Modèle ShoppingListItem - Articles d'une liste de courses
-    RG15: Inclut seulement les produits en quantité insuffisante
-    """
+    """Modèle ShoppingListItem - Articles d'une liste de courses"""
 
     __tablename__ = "shopping_list_items"
 

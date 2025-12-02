@@ -148,6 +148,16 @@ def list_feasible_recipes(
     feasible_recipes = recipe_service.find_feasible_recipes(
         fridge_id=fridge_id, user=current_user
     )
+
+    # ✅ DEBUG : Logger ce qui est retourné
+    for item in feasible_recipes[:3]:  # Les 3 premiers
+        logger.info(
+            f"API Response: {item['recipe'].title} - "
+            f"complete={item['ingredients_complete']}, "
+            f"combined={item['combined_percentage']}%, "
+            f"status={item['shopping_list_status']}"
+        )
+
     return feasible_recipes
 
 
@@ -263,3 +273,65 @@ async def save_suggested_recipe(
         raise HTTPException(
             status_code=500, detail=f"Erreur lors de la sauvegarde: {str(e)}"
         )
+
+
+@router.get("/debug/shopping-lists-recipes")
+def debug_shopping_lists_recipes(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    🔍 DEBUG : Voir les liens entre recettes et listes de courses
+    """
+    from app.models.shopping_list import ShoppingList
+    from app.models.recipe import Recipe
+
+    # Toutes les listes de courses de l'utilisateur
+    shopping_lists = (
+        db.query(ShoppingList).filter(ShoppingList.user_id == current_user.id).all()
+    )
+
+    # Toutes les recettes
+    recipes = db.query(Recipe).all()
+
+    lists_info = []
+    for sl in shopping_lists:
+        items_count = len(sl.items)
+        purchased_count = sum(1 for item in sl.items if item.status == "purchased")
+
+        lists_info.append(
+            {
+                "id": sl.id,
+                "fridge_id": sl.fridge_id,
+                "recipe_id": sl.recipe_id,  # ✅ C'est ça qu'on vérifie
+                "recipe_name": sl.recipe.title if sl.recipe else None,
+                "generated_by": sl.generated_by,
+                "status": sl.status,
+                "items_count": items_count,
+                "purchased_count": purchased_count,
+                "is_completed": purchased_count == items_count and items_count > 0,
+                "created_at": sl.created_at.isoformat() if sl.created_at else None,
+            }
+        )
+
+    recipes_info = [
+        {
+            "id": r.id,
+            "title": r.title,
+            "has_shopping_list": any(sl["recipe_id"] == r.id for sl in lists_info),
+        }
+        for r in recipes[:20]  # Limiter à 20
+    ]
+
+    return {
+        "user_id": current_user.id,
+        "shopping_lists": lists_info,
+        "recipes_sample": recipes_info,
+        "total_recipes": len(recipes),
+        "lists_with_recipe_id": sum(
+            1 for sl in lists_info if sl["recipe_id"] is not None
+        ),
+        "lists_without_recipe_id": sum(
+            1 for sl in lists_info if sl["recipe_id"] is None
+        ),
+    }

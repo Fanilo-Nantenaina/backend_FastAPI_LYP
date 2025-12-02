@@ -1,12 +1,29 @@
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, validator, model_validator
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
 
 class ShoppingListItemCreate(BaseModel):
-    product_id: int = Field(..., gt=0)
+    """
+    Schéma pour créer un item de liste de courses
+    Accepte SOIT product_id (produit existant), SOIT product_name (nouveau produit)
+    """
+
+    product_id: Optional[int] = Field(None, gt=0)
+    product_name: Optional[str] = Field(None, min_length=1, max_length=200)
     quantity: float = Field(..., gt=0)
     unit: str = Field(..., min_length=1, max_length=20)
+
+    @model_validator(mode="before")
+    def validate_product_source(cls, values):
+        """Vérifie qu'on a soit product_id, soit product_name"""
+        product_id = values.get("product_id")
+        product_name = values.get("product_name")
+
+        if not product_id and not product_name:
+            raise ValueError("Vous devez fournir soit product_id, soit product_name")
+
+        return values
 
 
 class ShoppingListCreate(BaseModel):
@@ -15,7 +32,9 @@ class ShoppingListCreate(BaseModel):
 
     @validator("items")
     def validate_items(cls, v):
-        """Vérifier qu'il n'y a pas de doublons"""
+        """Vérifier qu'il n'y a pas de doublons de product_id"""
+        if not v:
+            return v
         product_ids = [item.product_id for item in v]
         if len(product_ids) != len(set(product_ids)):
             raise ValueError("La liste contient des produits en double")
@@ -30,18 +49,18 @@ class GenerateShoppingListRequest(BaseModel):
 class GenerateFromIngredientsRequest(BaseModel):
     """
     🆕 Requête pour générer une liste de courses depuis des ingrédients bruts
-
-    Utilisé principalement pour créer une liste depuis les ingrédients
-    manquants suggérés par l'IA pour une recette.
+    ✅ AJOUT : recipe_id optionnel pour lier à une recette
     """
 
     fridge_id: int = Field(..., gt=0)
     ingredients: List[Dict[str, Any]] = Field(..., min_length=1)
+    recipe_id: Optional[int] = None  # ✅ NOUVEAU
 
     class Config:
         json_schema_extra = {
             "example": {
                 "fridge_id": 1,
+                "recipe_id": 42,  # ✅ Optionnel
                 "ingredients": [
                     {"name": "Oignon", "quantity": 2, "unit": "pièces"},
                     {"name": "Crème fraîche", "quantity": 200, "unit": "ml"},
@@ -52,7 +71,6 @@ class GenerateFromIngredientsRequest(BaseModel):
 
     @validator("ingredients")
     def validate_ingredients(cls, v):
-        """Vérifier que chaque ingrédient a au moins un nom"""
         for ing in v:
             if not ing.get("name") or not str(ing.get("name")).strip():
                 raise ValueError("Chaque ingrédient doit avoir un nom")
@@ -66,7 +84,7 @@ class ShoppingListItemResponse(BaseModel):
     quantity: Optional[float]
     unit: Optional[str]
     status: str
-    product_name: Optional[str] = None 
+    product_name: Optional[str] = None
 
     class Config:
         from_attributes = True

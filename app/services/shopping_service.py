@@ -38,16 +38,16 @@ class ShoppingService:
         """
         CU4: Génère automatiquement une liste de courses intelligente
 
-        Args:
-            user_id: ID de l'utilisateur (pour RG13)
-            fridge_id: ID du frigo
-            recipe_ids: Liste des recettes à préparer (optionnel)
-            include_suggestions: Ajouter des suggestions IA
-
-        Returns:
-            ShoppingList créée avec tous les items
+        ✅ AMÉLIORÉ :
+        - Vérifie les restrictions alimentaires de l'utilisateur
+        - Privilégie les produits non consommés récemment (diversité)
+        - Évite les produits avec tags incompatibles
         """
         logger.info(f"Generating shopping list for fridge {fridge_id}")
+
+        # Récupérer l'utilisateur pour les restrictions alimentaires
+        user = self.db.query(User).filter(User.id == user_id).first()
+        dietary_restrictions = user.dietary_restrictions if user else []
 
         shopping_list = ShoppingList(
             user_id=user_id,
@@ -59,20 +59,30 @@ class ShoppingService:
 
         items_dict = {}
 
+        # Générer depuis les recettes (si spécifiées)
         if recipe_ids:
-            recipe_items = self._generate_from_recipes(fridge_id, recipe_ids)
+            recipe_items = self._generate_from_recipes(
+                fridge_id, recipe_ids, dietary_restrictions
+            )
             for item in recipe_items:
                 self._merge_item(items_dict, item)
 
+        # ✅ NOUVEAU : Suggestions intelligentes avec diversité
         if include_suggestions:
-            suggestion_items = self._generate_smart_suggestions(fridge_id, user_id)
+            suggestion_items = self._generate_smart_suggestions_with_diversity(
+                fridge_id, user_id, dietary_restrictions
+            )
             for item in suggestion_items:
                 self._merge_item(items_dict, item)
 
-        frequent_items = self._suggest_frequent_missing_items(fridge_id)
+        # Produits fréquemment manquants (filtrés par restrictions)
+        frequent_items = self._suggest_frequent_missing_items(
+            fridge_id, dietary_restrictions
+        )
         for item in frequent_items:
             self._merge_item(items_dict, item)
 
+        # Créer les items
         for product_id, item_data in items_dict.items():
             item = ShoppingListItem(
                 shopping_list_id=shopping_list.id,
@@ -87,8 +97,8 @@ class ShoppingService:
         self.db.refresh(shopping_list)
 
         logger.info(
-            f"Generated shopping list {shopping_list.id} "
-            f"with {len(items_dict)} items"
+            f"✅ Generated shopping list {shopping_list.id} "
+            f"with {len(items_dict)} items (dietary filters applied)"
         )
 
         return shopping_list
@@ -103,14 +113,15 @@ class ShoppingService:
             items_dict[product_id] = item_data
 
     def _generate_from_recipes(
-        self, fridge_id: int, recipe_ids: List[int]
+        self, fridge_id: int, recipe_ids: List[int], dietary_restrictions: List[str]
     ) -> List[Dict[str, Any]]:
         """
-        RG15: Génère les items basés sur les recettes
-        N'inclut que les produits en quantité insuffisante
+        ✅ AMÉLIORÉ : Génère les items basés sur les recettes
+        Filtre les produits incompatibles avec les restrictions alimentaires
         """
         logger.info(f"Generating items from {len(recipe_ids)} recipes")
 
+        # Inventaire actuel
         inventory = (
             self.db.query(InventoryItem)
             .filter(InventoryItem.fridge_id == fridge_id, InventoryItem.quantity > 0)
@@ -122,6 +133,7 @@ class ShoppingService:
             for item in inventory
         }
 
+        # Ingrédients requis
         ingredients = (
             self.db.query(RecipeIngredient)
             .filter(RecipeIngredient.recipe_id.in_(recipe_ids))
@@ -143,6 +155,18 @@ class ShoppingService:
         shopping_items = []
 
         for product_id, required in required_products.items():
+            # ✅ NOUVEAU : Vérifier les restrictions alimentaires
+            product = self.db.query(Product).filter(Product.id == product_id).first()
+
+            if product and self._product_violates_restrictions(
+                product, dietary_restrictions
+            ):
+                logger.info(
+                    f"❌ Skipping product {product.name} "
+                    f"(violates dietary restrictions: {product.tags})"
+                )
+                continue
+
             available = available_products.get(product_id, {})
             available_qty = available.get("quantity", 0)
 
@@ -158,24 +182,36 @@ class ShoppingService:
                     }
                 )
 
-        logger.info(f"Generated {len(shopping_items)} items from recipes")
+        logger.info(
+            f"Generated {len(shopping_items)} items from recipes "
+            f"(filtered by dietary restrictions)"
+        )
         return shopping_items
 
-    def _generate_smart_suggestions(
-        self, fridge_id: int, user_id: int
+    def _generate_smart_suggestions_with_diversity(
+        self, fridge_id: int, user_id: int, dietary_restrictions: List[str]
     ) -> List[Dict[str, Any]]:
         """
-        Suggestions intelligentes basées sur :
-        1. L'historique de consommation
-        2. Les préférences utilisateur
-        3. Les patterns d'achat
+        ✅ NOUVEAU : Suggestions intelligentes avec DIVERSITÉ
+
+        Privilégie :
+        1. Les produits non consommés récemment (30 derniers jours)
+        2. Les produits variés (évite les répétitions)
+        3. Les produits compatibles avec les restrictions alimentaires
         """
-        logger.info(f"Generating smart suggestions for fridge {fridge_id}")
+        logger.info(f"Generating diverse suggestions for fridge {fridge_id}")
 
         suggestions = []
 
+        # Récupérer les produits fréquemment consommés
         consumed_products = self._get_frequently_consumed_products(fridge_id)
 
+        # ✅ NOUVEAU : Récupérer les produits consommés récemment (30 jours)
+        recently_consumed_ids = self._get_recently_consumed_product_ids(
+            fridge_id, days=30
+        )
+
+        # Inventaire actuel
         current_inventory = (
             self.db.query(InventoryItem.product_id)
             .filter(InventoryItem.fridge_id == fridge_id, InventoryItem.quantity > 0)
@@ -183,35 +219,115 @@ class ShoppingService:
         )
         current_product_ids = {item.product_id for item in current_inventory}
 
-        for product_data in consumed_products[:10]:
+        # Score de priorité pour chaque produit
+        for product_data in consumed_products[:20]:  # Top 20 produits
             product_id = product_data["product_id"]
 
-            if product_id not in current_product_ids:
-                product = (
-                    self.db.query(Product).filter(Product.id == product_id).first()
+            # Déjà en stock ? Skip
+            if product_id in current_product_ids:
+                continue
+
+            product = self.db.query(Product).filter(Product.id == product_id).first()
+
+            if not product:
+                continue
+
+            # ✅ Vérifier restrictions alimentaires
+            if self._product_violates_restrictions(product, dietary_restrictions):
+                logger.info(
+                    f"⚠️ Skipping {product.name} (dietary restriction: {product.tags})"
+                )
+                continue
+
+            # ✅ NOUVEAU : Score de diversité
+            diversity_score = 1.0
+
+            # Pénalité si consommé récemment
+            if product_id in recently_consumed_ids:
+                diversity_score *= 0.3  # Réduire fortement la priorité
+                logger.info(
+                    f"📊 {product.name} : recently consumed, "
+                    f"diversity score = {diversity_score}"
+                )
+            else:
+                diversity_score *= 1.5  # Bonus pour produits non récents
+                logger.info(
+                    f"✨ {product.name} : NOT recently consumed, "
+                    f"diversity bonus applied"
                 )
 
-                if product:
-                    avg_quantity = product_data.get("avg_quantity", 1.0)
+            # Score final = fréquence × diversité
+            final_score = product_data.get("frequency", 0) * diversity_score
 
-                    suggestions.append(
-                        {
-                            "product_id": product.id,
-                            "quantity": round(avg_quantity, 2),
-                            "unit": product.default_unit,
-                            "reason": "frequently_consumed",
-                            "confidence": product_data.get("frequency", 0),
-                        }
-                    )
+            avg_quantity = product_data.get("avg_quantity", 1.0)
 
-        logger.info(f"Generated {len(suggestions)} smart suggestions")
+            suggestions.append(
+                {
+                    "product_id": product.id,
+                    "quantity": round(avg_quantity, 2),
+                    "unit": product.default_unit,
+                    "reason": "diverse_suggestion",
+                    "priority_score": final_score,
+                }
+            )
+
+        # ✅ Trier par score de priorité (produits variés en premier)
+        suggestions.sort(key=lambda x: x.get("priority_score", 0), reverse=True)
+
+        # Limiter à 10 suggestions max
+        suggestions = suggestions[:10]
+
+        logger.info(
+            f"✅ Generated {len(suggestions)} diverse suggestions "
+            f"(prioritizing variety)"
+        )
+
         return suggestions
 
+    def _get_recently_consumed_product_ids(self, fridge_id: int, days: int = 30) -> set:
+        """
+        ✅ NOUVEAU : Récupère les IDs des produits consommés récemment
+
+        Permet d'éviter de suggérer les mêmes produits tout le temps
+        """
+        cutoff_date = datetime.utcnow() - timedelta(days=days)
+
+        # Événements de consommation récents
+        recent_events = (
+            self.db.query(Event)
+            .filter(
+                Event.fridge_id == fridge_id,
+                Event.type.in_(["ITEM_CONSUMED", "ITEM_REMOVED"]),
+                Event.created_at >= cutoff_date,
+            )
+            .all()
+        )
+
+        consumed_product_ids = set()
+
+        for event in recent_events:
+            if event.inventory_item_id:
+                item = (
+                    self.db.query(InventoryItem)
+                    .filter(InventoryItem.id == event.inventory_item_id)
+                    .first()
+                )
+                if item:
+                    consumed_product_ids.add(item.product_id)
+
+        logger.info(
+            f"📊 Found {len(consumed_product_ids)} products "
+            f"consumed in last {days} days"
+        )
+
+        return consumed_product_ids
+
     def _get_frequently_consumed_products(
-        self, fridge_id: int, days: int = 30
+        self, fridge_id: int, days: int = 90
     ) -> List[Dict[str, Any]]:
         """
         Analyse l'historique pour trouver les produits fréquemment consommés
+        (fenêtre de 90 jours pour avoir un historique suffisant)
         """
         cutoff_date = datetime.utcnow() - timedelta(days=days)
 
@@ -270,14 +386,15 @@ class ShoppingService:
 
         return result
 
-    def _suggest_frequent_missing_items(self, fridge_id: int) -> List[Dict[str, Any]]:
+    def _suggest_frequent_missing_items(
+        self, fridge_id: int, dietary_restrictions: List[str]
+    ) -> List[Dict[str, Any]]:
         """
-        ✅ CORRIGÉ : Utilise le casting correct pour JSON
-        Suggère les produits fréquemment ajoutés mais actuellement absents
+        ✅ AMÉLIORÉ : Suggère les produits fréquemment ajoutés
+        Filtre selon les restrictions alimentaires
         """
         from sqlalchemy import Integer, cast, Text
 
-        # ✅ CORRECTION : Cast JSON → TEXT → INTEGER au lieu de jsonb_extract_path_text
         top_products = (
             self.db.query(
                 cast(cast(Event.payload["product_id"], Text), Integer).label(
@@ -308,6 +425,12 @@ class ShoppingService:
                 )
 
                 if product:
+                    # ✅ Vérifier restrictions alimentaires
+                    if self._product_violates_restrictions(
+                        product, dietary_restrictions
+                    ):
+                        continue
+
                     suggestions.append(
                         {
                             "product_id": product.id,
@@ -318,6 +441,45 @@ class ShoppingService:
                     )
 
         return suggestions
+
+    def _product_violates_restrictions(
+        self, product: Product, dietary_restrictions: List[str]
+    ) -> bool:
+        """
+        ✅ NOUVEAU : Vérifie si un produit viole les restrictions alimentaires
+
+        Args:
+            product: Le produit à vérifier
+            dietary_restrictions: Liste des restrictions (ex: ["gluten-free", "vegan"])
+
+        Returns:
+            True si le produit contient un tag incompatible
+        """
+        if not dietary_restrictions or not product.tags:
+            return False
+
+        # Normaliser les restrictions (minuscules, sans espaces)
+        normalized_restrictions = [
+            r.lower().strip().replace("-", "").replace("_", "")
+            for r in dietary_restrictions
+        ]
+
+        # Normaliser les tags du produit
+        normalized_tags = [
+            t.lower().strip().replace("-", "").replace("_", "") for t in product.tags
+        ]
+
+        # Vérifier si un tag est dans les restrictions
+        for restriction in normalized_restrictions:
+            # Le produit DOIT avoir ce tag (si restriction positive)
+            # Ex: restriction "vegan" → le produit doit avoir "vegan"
+
+            # Pour l'instant, on considère que les restrictions sont des EXCLUSIONS
+            # Ex: "dairy" en restriction → exclure les produits avec "dairy"
+            if restriction in normalized_tags:
+                return True  # Violation détectée
+
+        return False
 
     @transactional
     def add_item_to_list(
