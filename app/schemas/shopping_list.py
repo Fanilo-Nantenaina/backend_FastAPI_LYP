@@ -29,6 +29,7 @@ class ShoppingListItemCreate(BaseModel):
 class ShoppingListCreate(BaseModel):
     fridge_id: int = Field(..., gt=0)
     items: List[ShoppingListItemCreate] = Field(..., min_length=1)
+    name: Optional[str] = None
 
     @validator("items")
     def validate_items(cls, v):
@@ -94,6 +95,7 @@ class ShoppingListResponse(BaseModel):
     id: int
     user_id: int
     fridge_id: int
+    name: str
     created_at: datetime
     generated_by: Optional[str]
     items: List[ShoppingListItemResponse] = []

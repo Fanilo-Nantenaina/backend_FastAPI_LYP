@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List
 import logging
@@ -28,13 +28,37 @@ def list_recipes(
     difficulty: str = None,
     cuisine: str = None,
     limit: int = 50,
+    sort_by: str = Query("date", regex="^(date|name|time)$"),  # âœ… PLUS DE "match"
+    order: str = Query("desc", regex="^(asc|desc)$"),
 ):
-    """Liste toutes les recettes disponibles"""
+    """Liste toutes les recettes disponibles
+
+    âš ï¸ Le tri par 'match' n'est disponible QUE pour les recettes rÃ©alisables
+    (route /recipes/fridges/{fridge_id}/feasible)
+    """
     query = db.query(Recipe)
+
     if difficulty:
         query = query.filter(Recipe.difficulty == difficulty)
     if cuisine:
         query = query.filter(Recipe.extra_data["cuisine"].astext == cuisine)
+
+    # Tri selon le paramÃ¨tre
+    if sort_by == "name":
+        query = query.order_by(
+            Recipe.title.desc() if order == "desc" else Recipe.title.asc()
+        )
+    elif sort_by == "time":
+        query = query.order_by(
+            Recipe.preparation_time.desc()
+            if order == "desc"
+            else Recipe.preparation_time.asc()
+        )
+    else:  # date par dÃ©faut
+        query = query.order_by(
+            Recipe.created_at.desc() if order == "desc" else Recipe.created_at.asc()
+        )
+
     return query.limit(limit).all()
 
 
@@ -132,8 +156,15 @@ def list_feasible_recipes(
     fridge_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    sort_by: str = Query("match", regex="^(match|name|date|time)$"),
+    order: str = Query("desc", regex="^(asc|desc)$"),
 ):
-    """CU6: Consulter les recettes faisables avec l'inventaire actuel"""
+    """
+    CU6: Consulter les recettes faisables avec l'inventaire actuel
+    ✅ AJOUT : Options de tri
+    - sort_by: match (défaut), name, date, time
+    - order: desc (défaut), asc
+    """
     from app.models.fridge import Fridge
 
     fridge = (
@@ -146,17 +177,11 @@ def list_feasible_recipes(
 
     recipe_service = RecipeService(db)
     feasible_recipes = recipe_service.find_feasible_recipes(
-        fridge_id=fridge_id, user=current_user
+        fridge_id=fridge_id,
+        user=current_user,
+        sort_by=sort_by,
+        sort_order=order,
     )
-
-    # ✅ DEBUG : Logger ce qui est retourné
-    for item in feasible_recipes[:3]:  # Les 3 premiers
-        logger.info(
-            f"API Response: {item['recipe'].title} - "
-            f"complete={item['ingredients_complete']}, "
-            f"combined={item['combined_percentage']}%, "
-            f"status={item['shopping_list_status']}"
-        )
 
     return feasible_recipes
 

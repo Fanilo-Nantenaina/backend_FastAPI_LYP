@@ -32,27 +32,28 @@ class ShoppingService:
         self,
         user_id: int,
         fridge_id: int,
+        name: Optional[str] = None,
         recipe_ids: Optional[List[int]] = None,
+        recipe_id: Optional[int] = None,  # ✅ NOUVEAU paramètre
         include_suggestions: bool = True,
     ) -> ShoppingList:
         """
         CU4: Génère automatiquement une liste de courses intelligente
 
-        ✅ AMÉLIORÉ :
-        - Vérifie les restrictions alimentaires de l'utilisateur
-        - Privilégie les produits non consommés récemment (diversité)
-        - Évite les produits avec tags incompatibles
+        ✅ AMÉLIORÉ : Accepte maintenant recipe_id directement
         """
         logger.info(f"Generating shopping list for fridge {fridge_id}")
 
-        # Récupérer l'utilisateur pour les restrictions alimentaires
         user = self.db.query(User).filter(User.id == user_id).first()
         dietary_restrictions = user.dietary_restrictions if user else []
 
+        # ✅ MODIFIÉ : Créer avec recipe_id dès le début
         shopping_list = ShoppingList(
             user_id=user_id,
             fridge_id=fridge_id,
             generated_by="auto_recipe" if recipe_ids else "ai_suggestion",
+            name=name,
+            recipe_id=recipe_id,  # ✅ Défini dès la création
         )
         self.db.add(shopping_list)
         self.db.flush()
@@ -67,7 +68,7 @@ class ShoppingService:
             for item in recipe_items:
                 self._merge_item(items_dict, item)
 
-        # ✅ NOUVEAU : Suggestions intelligentes avec diversité
+        # Suggestions intelligentes avec diversité
         if include_suggestions:
             suggestion_items = self._generate_smart_suggestions_with_diversity(
                 fridge_id, user_id, dietary_restrictions
@@ -75,7 +76,7 @@ class ShoppingService:
             for item in suggestion_items:
                 self._merge_item(items_dict, item)
 
-        # Produits fréquemment manquants (filtrés par restrictions)
+        # Produits fréquemment manquants
         frequent_items = self._suggest_frequent_missing_items(
             fridge_id, dietary_restrictions
         )
@@ -97,8 +98,8 @@ class ShoppingService:
         self.db.refresh(shopping_list)
 
         logger.info(
-            f"✅ Generated shopping list {shopping_list.id} "
-            f"with {len(items_dict)} items (dietary filters applied)"
+            f"✅ Generated shopping list {shopping_list.id} '{shopping_list.name}' "
+            f"with {len(items_dict)} items, recipe_id={shopping_list.recipe_id}"
         )
 
         return shopping_list

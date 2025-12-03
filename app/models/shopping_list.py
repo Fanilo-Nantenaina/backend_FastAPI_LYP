@@ -26,6 +26,8 @@ class ShoppingList(Base):
     recipe_id = Column(
         Integer, ForeignKey("recipes.id", ondelete="SET NULL"), nullable=True
     )
+    
+    name = Column(String, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     generated_by = Column(String)  # 'manual', 'auto_recipe', 'ai_suggestion'

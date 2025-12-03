@@ -198,12 +198,15 @@ class AlertService:
     ) -> Optional[Alert]:
         """
         Crée une alerte si la quantité est en dessous du seuil configuré
-        Utile pour les produits de base (lait, œufs, etc.)
         """
-        if not item.product.metadata:
+        # ❌ AVANT (ligne 206)
+        # min_quantity = item.product.metadata.get("min_quantity")
+        
+        # ✅ APRÈS - Vérifier que metadata existe et est un dict
+        if not item.product.extra_data:
             return None
-
-        min_quantity = item.product.metadata.get("min_quantity")
+        
+        min_quantity = item.product.extra_data.get("min_quantity")
         if min_quantity is None:
             return None
 

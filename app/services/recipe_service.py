@@ -55,7 +55,13 @@ class RecipeService:
         self.db.refresh(recipe)
         return recipe
 
-    def find_feasible_recipes(self, fridge_id: int, user: User) -> List[Dict[str, Any]]:
+    def find_feasible_recipes(
+        self,
+        fridge_id: int,
+        user: User,
+        sort_by: str = "match",
+        sort_order: str = "desc",
+    ) -> List[Dict[str, Any]]:
         """
         CU6: Trouve les recettes faisables avec l'inventaire actuel
         ✅ VERSION CORRIGÉE ET UNIQUE
@@ -110,6 +116,7 @@ class RecipeService:
                     ShoppingList.recipe_id == recipe.id,
                     ShoppingList.fridge_id == fridge_id,
                     ShoppingList.user_id == user.id,
+                    ShoppingList.status != "cancelled",
                 )
                 .order_by(ShoppingList.created_at.desc())
                 .first()
@@ -205,13 +212,26 @@ class RecipeService:
                 }
             )
 
-        # Trier : les plus prêts en premier
-        feasible_recipes.sort(key=lambda x: x["combined_percentage"], reverse=True)
+        reverse = sort_order == "desc"
+
+        if sort_by == "match":
+            feasible_recipes.sort(
+                key=lambda x: x["combined_percentage"], reverse=reverse
+            )
+        elif sort_by == "name":
+            feasible_recipes.sort(
+                key=lambda x: x["recipe"].title.lower(), reverse=reverse
+            )
+        elif sort_by == "date":
+            feasible_recipes.sort(key=lambda x: x["recipe"].created_at, reverse=reverse)
+        elif sort_by == "time":
+            feasible_recipes.sort(
+                key=lambda x: x["recipe"].preparation_time or 9999, reverse=reverse
+            )
 
         logger.info(
-            f"✅ Trouvé {len(feasible_recipes)} recettes pour fridge {fridge_id}"
+            f"✅ Trouvé {len(feasible_recipes)} recettes (triées par {sort_by} {sort_order})"
         )
-
         return feasible_recipes
 
     def _check_dietary_restrictions(self, recipe: Recipe, user: User) -> bool:
