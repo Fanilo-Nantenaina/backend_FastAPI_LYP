@@ -215,6 +215,8 @@ def update_inventory_item(
         raise HTTPException(status_code=404, detail="Inventory item not found")
 
     old_quantity = item.quantity
+    old_expiry_date = item.expiry_date  # ✅ NOUVEAU
+
     if request.quantity is not None:
         if request.quantity < 0:
             raise HTTPException(status_code=400, detail="Quantity cannot be negative")
@@ -224,6 +226,7 @@ def update_inventory_item(
     if request.open_date is not None:
         item.open_date = request.open_date
 
+    # ✅ NOUVEAU : Événement si quantité modifiée
     if request.quantity is not None and request.quantity != old_quantity:
         event = Event(
             fridge_id=fridge.id,
@@ -237,8 +240,48 @@ def update_inventory_item(
         )
         db.add(event)
 
+    # ✅ NOUVEAU : Événement si date d'expiration modifiée
+    if request.expiry_date is not None and request.expiry_date != old_expiry_date:
+        event = Event(
+            fridge_id=fridge.id,
+            inventory_item_id=item.id,
+            type="EXPIRY_UPDATED",
+            payload={
+                "old_expiry_date": (
+                    old_expiry_date.isoformat() if old_expiry_date else None
+                ),
+                "new_expiry_date": request.expiry_date.isoformat(),
+            },
+        )
+        db.add(event)
+
     db.commit()
     db.refresh(item)
+
+    # ✅ NOUVEAU : Déclencher une vérification d'alerte immédiate
+    if request.expiry_date is not None:
+        from app.services.alert_service import AlertService
+
+        alert_service = AlertService(db)
+
+        # Vérifier uniquement les alertes d'expiration pour cet item
+        config = fridge.config or {}
+        expiry_days = config.get("expiry_warning_days", 3)
+
+        # Supprimer les anciennes alertes de ce type pour cet item
+        db.query(Alert).filter(
+            Alert.inventory_item_id == item.id,
+            Alert.type.in_(["EXPIRY_SOON", "EXPIRED"]),
+            Alert.status == "pending",
+        ).delete()
+
+        # Créer une nouvelle alerte si nécessaire
+        new_alert = alert_service._check_expiry_alert(item, fridge.id, expiry_days)
+        if new_alert:
+            logger.info(f"✅ New expiry alert created after update: {item.id}")
+
+        db.commit()
+
     return _enrich_inventory_response(item, db)
 
 

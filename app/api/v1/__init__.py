@@ -10,6 +10,7 @@ from app.api.v1 import (
     recipes,
     shopping_lists,
     events,
+    search,
 )
 
 api_router = APIRouter()
@@ -26,5 +27,6 @@ api_router.include_router(
     shopping_lists.router, prefix="/shopping-lists", tags=["Shopping Lists"]
 )
 api_router.include_router(events.router, prefix="/fridges", tags=["Events"])
+api_router.include_router(search.router, prefix="/fridges", tags=["Search"])
 
 __all__ = ["api_router"]
