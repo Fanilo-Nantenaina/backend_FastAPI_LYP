@@ -39,6 +39,8 @@ DEFAULT_SHELF_LIFE = {
     "fraise": 5,
     "raisin": 7,
     "tomate": 7,
+    "citron": 21,
+    "mangue": 7,
     # Légumes
     "carotte": 21,
     "salade": 7,
@@ -46,6 +48,10 @@ DEFAULT_SHELF_LIFE = {
     "poivron": 14,
     "oignon": 30,
     "pomme de terre": 60,
+    "gingembre": 30,  # ✅ AJOUT
+    "ail": 60,
+    "chou": 14,
+    "brocoli": 7,
     # Œufs et substituts
     "œuf": 28,
     "oeuf": 28,
@@ -57,12 +63,14 @@ DEFAULT_SHELF_LIFE = {
     "ketchup": 180,
     "mayonnaise": 60,
     "moutarde": 180,
+    "sauce soja": 365,
     # Défaut pour catégories
     "produit laitier": 7,
     "viande": 3,
     "fruit": 7,
     "légume": 10,
     "plat préparé": 3,
+    "condiment": 180,
 }
 
 

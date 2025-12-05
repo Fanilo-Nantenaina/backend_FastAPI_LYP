@@ -17,6 +17,9 @@ from app.schemas.inventory import (
     InventoryItemUpdate,
     ConsumeItemRequest,
 )
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/fridges/{fridge_id}/inventory", tags=["Inventory"])
 
@@ -144,58 +147,179 @@ def add_inventory_item(
     fridge: Fridge = Depends(get_fridge_access_hybrid),
     db: Session = Depends(get_db),
 ):
-    """Ajouter un article à l'inventaire."""
-    product = None
+    """
+    ✅ CORRIGÉ : Ajouter un article à l'inventaire SANS DUPLICATION
 
+    Logique :
+    1. Chercher un produit existant (nom insensible à la casse)
+    2. Chercher un item existant dans ce frigo pour ce produit
+    3. Si trouvé : METTRE À JOUR la quantité
+    4. Si non trouvé : CRÉER un nouvel item
+    5. Calculer automatiquement la date d'expiration si absente
+    """
+
+    product = None
+    product_name = None
+
+    # ============================================
+    # PHASE 1 : Identifier ou créer le produit
+    # ============================================
     if request.product_id:
+        # Cas 1 : ID fourni directement
         product = db.query(Product).filter(Product.id == request.product_id).first()
         if not product:
             raise HTTPException(status_code=404, detail="Product not found")
+
     elif request.product_name:
-        existing = (
-            db.query(Product).filter(Product.name.ilike(request.product_name)).first()
+        # Cas 2 : Nom fourni → chercher produit existant (insensible à la casse)
+        product_name = request.product_name.strip()
+
+        # ✅ RECHERCHE INTELLIGENTE (case-insensitive)
+        product = (
+            db.query(Product)
+            .filter(Product.name.ilike(product_name))  # ILIKE = insensible à la casse
+            .first()
         )
-        if existing:
-            product = existing
-        else:
+
+        if not product:
+            # ✅ Créer nouveau produit seulement si vraiment absent
+            logger.info(f"🆕 Creating new product: {product_name}")
             product = Product(
-                name=request.product_name.strip().capitalize(),
+                name=product_name.capitalize(),
                 category=request.category or "Divers",
                 default_unit=request.unit or "pièce",
-                shelf_life_days=7,
+                shelf_life_days=7,  # Valeur par défaut
             )
             db.add(product)
-            db.flush()
+            db.flush()  # Obtenir l'ID
 
-    inventory_item = InventoryItem(
-        fridge_id=fridge.id,
-        product_id=product.id,
-        quantity=request.quantity,
-        initial_quantity=request.quantity,
-        unit=request.unit or product.default_unit,
-        expiry_date=request.expiry_date,
-        source="manual",
-        last_seen_at=datetime.utcnow(),
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Vous devez fournir soit product_id, soit product_name",
+        )
+
+    # ============================================
+    # PHASE 2 : Calculer la date d'expiration
+    # ============================================
+    expiry_date = request.expiry_date
+
+    if not expiry_date:
+        # ✅ CALCUL AUTOMATIQUE basé sur shelf_life_days
+        if product.shelf_life_days:
+            expiry_date = date.today() + timedelta(days=product.shelf_life_days)
+            logger.info(
+                f"📅 Auto-calculated expiry: {expiry_date} "
+                f"({product.shelf_life_days} days from today)"
+            )
+        else:
+            # Fallback : 7 jours par défaut
+            expiry_date = date.today() + timedelta(days=7)
+            logger.warning(
+                f"⚠️ No shelf_life_days for {product.name}, using default 7 days"
+            )
+
+    # ============================================
+    # PHASE 3 : Chercher item existant dans ce frigo
+    # ============================================
+    existing_item = (
+        db.query(InventoryItem)
+        .filter(
+            InventoryItem.fridge_id == fridge.id,
+            InventoryItem.product_id == product.id,
+            InventoryItem.quantity > 0,  # Seulement items actifs
+        )
+        .first()
     )
 
-    db.add(inventory_item)
-    db.flush()
+    if existing_item:
+        # ✅ CAS 1 : MISE À JOUR de l'item existant
+        logger.info(
+            f"♻️ Updating existing item: {product.name} "
+            f"(current: {existing_item.quantity}, adding: {request.quantity})"
+        )
 
-    event = Event(
-        fridge_id=fridge.id,
-        inventory_item_id=inventory_item.id,
-        type="ITEM_ADDED",
-        payload={
-            "product_name": product.name,
-            "quantity": request.quantity,
-            "unit": inventory_item.unit,
-            "source": "manual",
-        },
-    )
-    db.add(event)
-    db.commit()
-    db.refresh(inventory_item)
-    return _enrich_inventory_response(inventory_item, db)
+        old_quantity = existing_item.quantity
+        existing_item.quantity += request.quantity
+        existing_item.last_seen_at = datetime.utcnow()
+
+        # ✅ Mettre à jour la date d'expiration si la nouvelle est plus lointaine
+        if expiry_date and (
+            not existing_item.expiry_date or expiry_date > existing_item.expiry_date
+        ):
+            logger.info(
+                f"📅 Updating expiry date: "
+                f"{existing_item.expiry_date} → {expiry_date}"
+            )
+            existing_item.expiry_date = expiry_date
+
+        # Créer l'événement
+        event = Event(
+            fridge_id=fridge.id,
+            inventory_item_id=existing_item.id,
+            type="QUANTITY_UPDATED",
+            payload={
+                "product_name": product.name,
+                "old_quantity": old_quantity,
+                "added_quantity": request.quantity,
+                "new_quantity": existing_item.quantity,
+                "unit": existing_item.unit,
+                "source": "manual_add",
+                "expiry_date": expiry_date.isoformat() if expiry_date else None,
+            },
+        )
+        db.add(event)
+        db.commit()
+        db.refresh(existing_item)
+
+        logger.info(
+            f"✅ Item updated: {product.name} "
+            f"(total: {existing_item.quantity} {existing_item.unit})"
+        )
+
+        return _enrich_inventory_response(existing_item, db)
+
+    else:
+        # ✅ CAS 2 : CRÉATION d'un nouvel item
+        logger.info(f"🆕 Creating new inventory item: {product.name}")
+
+        inventory_item = InventoryItem(
+            fridge_id=fridge.id,
+            product_id=product.id,
+            quantity=request.quantity,
+            initial_quantity=request.quantity,
+            unit=request.unit or product.default_unit,
+            expiry_date=expiry_date,
+            source="manual",
+            last_seen_at=datetime.utcnow(),
+        )
+
+        db.add(inventory_item)
+        db.flush()
+
+        # Créer l'événement
+        event = Event(
+            fridge_id=fridge.id,
+            inventory_item_id=inventory_item.id,
+            type="ITEM_ADDED",
+            payload={
+                "product_name": product.name,
+                "quantity": request.quantity,
+                "unit": inventory_item.unit,
+                "source": "manual",
+                "expiry_date": expiry_date.isoformat() if expiry_date else None,
+            },
+        )
+        db.add(event)
+        db.commit()
+        db.refresh(inventory_item)
+
+        logger.info(
+            f"✅ New item created: {product.name} "
+            f"({request.quantity} {inventory_item.unit})"
+        )
+
+        return _enrich_inventory_response(inventory_item, db)
 
 
 @router.put("/{item_id}")

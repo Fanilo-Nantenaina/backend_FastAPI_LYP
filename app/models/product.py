@@ -17,7 +17,7 @@ class Product(Base):
     category = Column(String, index=True)
 
     # Informations nutritionnelles et conservation
-    shelf_life_days = Column(Integer)  # Durée de conservation estimée
+    shelf_life_days = Column(Integer, default=7)  # Durée de conservation estimée
     default_unit = Column(String, default="piece")  # piece, kg, L, etc.
 
     # Métadonnées
