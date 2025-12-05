@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List, Dict
+from typing import List, Dict, Any
 from datetime import datetime
 
 from app.core.database import get_db
@@ -9,6 +9,7 @@ from app.models.user import User
 from app.models.fridge import Fridge
 from app.models.product import Product
 from app.models.recipe import Recipe
+from app.models.inventory import InventoryItem
 from app.models.shopping_list import ShoppingList, ShoppingListItem
 from app.schemas.shopping_list import (
     ShoppingListResponse,
@@ -19,6 +20,8 @@ from app.schemas.shopping_list import (
 )
 from app.services.shopping_service import ShoppingService
 import logging
+import json
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +29,7 @@ router = APIRouter(prefix="/shopping-lists", tags=["Shopping Lists"])
 
 
 def _enrich_shopping_list_response(shopping_list: ShoppingList, db: Session) -> Dict:
-    """Enrichit la réponse avec les noms de produits"""
+    """Enrichit la réponse avec les noms de produits ET recipe_id"""
     items = []
     for item in shopping_list.items:
         product = db.query(Product).filter(Product.id == item.product_id).first()
@@ -52,6 +55,8 @@ def _enrich_shopping_list_response(shopping_list: ShoppingList, db: Session) -> 
         "name": shopping_list.name,
         "created_at": shopping_list.created_at,
         "generated_by": shopping_list.generated_by,
+        "recipe_id": shopping_list.recipe_id,  # ✅ AJOUT CRITIQUE
+        "status": shopping_list.status,  # ✅ BONUS (si vous l'utilisez)
         "items": items,
     }
 
@@ -305,15 +310,14 @@ def list_shopping_lists(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     fridge_id: int = None,
-    sort_by: str = "date",  # ✅ NOUVEAU : date, name, status
-    order: str = "desc",  # ✅ NOUVEAU : asc, desc
+    sort_by: str = "date",
+    order: str = "desc",
 ):
     query = db.query(ShoppingList).filter(ShoppingList.user_id == current_user.id)
 
     if fridge_id:
         query = query.filter(ShoppingList.fridge_id == fridge_id)
 
-    # ✅ AJOUT : Tri dynamique
     if sort_by == "name":
         query = query.order_by(
             ShoppingList.name.desc() if order == "desc" else ShoppingList.name.asc()
@@ -322,7 +326,7 @@ def list_shopping_lists(
         query = query.order_by(
             ShoppingList.status.desc() if order == "desc" else ShoppingList.status.asc()
         )
-    else:  # date par défaut
+    else:
         query = query.order_by(
             ShoppingList.created_at.desc()
             if order == "desc"
@@ -330,6 +334,7 @@ def list_shopping_lists(
         )
 
     lists = query.all()
+
     return [_enrich_shopping_list_response(lst, db) for lst in lists]
 
 
@@ -595,3 +600,146 @@ def delete_shopping_list(
     db.commit()
 
     return None
+
+
+@router.post("/suggest-products", response_model=Dict[str, Any])
+async def suggest_diverse_products(
+    request: Dict[str, Any],
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    🆕 Suggère des produits variés basés sur l'inventaire actuel
+    Utilise Gemini pour proposer des alternatives intéressantes
+    """
+    fridge_id = request.get("fridge_id")
+
+    if not fridge_id:
+        raise HTTPException(status_code=400, detail="fridge_id required")
+
+    # Vérifier l'accès au frigo
+    fridge = (
+        db.query(Fridge)
+        .filter(Fridge.id == fridge_id, Fridge.user_id == current_user.id)
+        .first()
+    )
+
+    if not fridge:
+        raise HTTPException(status_code=404, detail="Fridge not found")
+
+    # Récupérer l'inventaire actuel
+    inventory = (
+        db.query(InventoryItem)
+        .filter(InventoryItem.fridge_id == fridge_id, InventoryItem.quantity > 0)
+        .all()
+    )
+
+    if not inventory:
+        return {
+            "suggested_products": [],
+            "message": "Votre frigo est vide. Ajoutez des produits pour obtenir des suggestions.",
+        }
+
+    # Construire le contexte pour Gemini
+    current_products = []
+    for item in inventory:
+        product = db.query(Product).filter(Product.id == item.product_id).first()
+        if product:
+            current_products.append(
+                {
+                    "name": product.name,
+                    "category": product.category,
+                    "quantity": item.quantity,
+                    "unit": item.unit,
+                }
+            )
+
+    # Restrictions alimentaires
+    dietary_restrictions = current_user.dietary_restrictions or []
+    restrictions_text = (
+        ", ".join(dietary_restrictions) if dietary_restrictions else "Aucune"
+    )
+
+    # Prompt pour Gemini
+    prompt = f"""Tu es un assistant culinaire intelligent. Analyse l'inventaire actuel et suggère 8-12 produits VARIÉS et INTÉRESSANTS à acheter.
+
+INVENTAIRE ACTUEL :
+{json.dumps(current_products, ensure_ascii=False, indent=2)}
+
+RESTRICTIONS ALIMENTAIRES : {restrictions_text}
+
+RÈGLES IMPORTANTES :
+1. Suggère des produits DIFFÉRENTS de ceux déjà présents (pour varier l'alimentation)
+2. Propose des alternatives saines et gourmandes
+3. Évite les basiques type eau, sel, huile, ail (sauf si vraiment pertinent)
+4. Privilégie les produits frais, de saison et intéressants
+5. Respecte ABSOLUMENT les restrictions alimentaires
+6. Suggère des quantités réalistes (1-3 unités pour les légumes/fruits, quantités adaptées pour le reste)
+7. Varie les catégories (légumes, fruits, protéines, produits laitiers, etc.)
+8. Propose des produits qui se complètent bien ensemble
+
+Réponds en JSON avec cette structure :
+{{
+  "suggested_products": [
+    {{
+      "name": "Nom du produit",
+      "category": "Catégorie",
+      "quantity": 2,
+      "unit": "pièce/kg/L",
+      "reason": "Pourquoi ce produit est intéressant"
+    }}
+  ],
+  "diversity_note": "Brève note sur la diversité proposée"
+}}"""
+
+    try:
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=settings.GEMINI_API_KEY)
+
+        output_schema = {
+            "type": "object",
+            "properties": {
+                "suggested_products": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "category": {"type": "string"},
+                            "quantity": {"type": "number"},
+                            "unit": {"type": "string"},
+                            "reason": {"type": "string"},
+                        },
+                        "required": ["name", "category", "quantity", "unit", "reason"],
+                    },
+                },
+                "diversity_note": {"type": "string"},
+            },
+            "required": ["suggested_products", "diversity_note"],
+        }
+
+        config = types.GenerateContentConfig(
+            system_instruction="Tu es un expert en nutrition et diversité alimentaire. Réponds uniquement en JSON.",
+            response_mime_type="application/json",
+            response_schema=output_schema,
+        )
+
+        response = client.models.generate_content(
+            model=settings.GEMINI_MODEL,
+            contents=[prompt],
+            config=config,
+        )
+
+        data = json.loads(response.text)
+
+        logger.info(
+            f"✅ Generated {len(data['suggested_products'])} diverse product suggestions"
+        )
+
+        return data
+
+    except Exception as e:
+        logger.error(f"❌ Error generating suggestions: {e}")
+        raise HTTPException(status_code=500, detail=f"Erreur IA: {str(e)}")

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 from typing import List, Optional
+from datetime import datetime
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
@@ -76,6 +77,7 @@ def list_alerts(
 
     if status:
         query = query.filter(Alert.status == status)
+        return query.order_by(Alert.resolved_at.desc()).all()
 
     return query.order_by(Alert.created_at.desc()).all()
 
@@ -99,6 +101,7 @@ def update_alert_status(
 
     if request.status:
         alert.status = request.status
+        alert.resolved_at = datetime.utcnow()
 
     db.commit()
     db.refresh(alert)

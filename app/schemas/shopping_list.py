@@ -33,12 +33,23 @@ class ShoppingListCreate(BaseModel):
 
     @validator("items")
     def validate_items(cls, v):
-        """Vérifier qu'il n'y a pas de doublons de product_id"""
+        """Vérifier qu'il n'y a pas de doublons (product_id OU product_name)"""
         if not v:
             return v
-        product_ids = [item.product_id for item in v]
-        if len(product_ids) != len(set(product_ids)):
-            raise ValueError("La liste contient des produits en double")
+
+        seen = set()
+        for item in v:
+            if item.product_id is not None:
+                key = ("id", item.product_id)
+            elif item.product_name is not None:
+                key = ("name", item.product_name.strip().lower())
+            else:
+                continue
+
+            if key in seen:
+                raise ValueError("La liste contient des produits en double")
+            seen.add(key)
+
         return v
 
 
