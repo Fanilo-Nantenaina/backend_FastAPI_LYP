@@ -1,8 +1,7 @@
-# api/v1/inventory.py - VERSION CORRIGÉE
 from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user_optional
@@ -10,6 +9,7 @@ from app.models.user import User
 from app.models.fridge import Fridge
 from app.models.inventory import InventoryItem
 from app.models.product import Product
+from app.models.alert import Alert
 from app.models.event import Event
 from app.schemas.inventory import (
     InventoryItemResponse,
@@ -67,12 +67,11 @@ def get_fridge_access_hybrid(
 
 def _enrich_inventory_response(item: InventoryItem, db: Session) -> dict:
     """
-    ✅ CORRIGÉ: Enrichit la réponse avec TOUTES les infos du produit
+    Enrichit la réponse avec TOUTES les infos du produit
     Inclut: nom, catégorie, statut de fraîcheur, jours avant expiration
     """
     product = db.query(Product).filter(Product.id == item.product_id).first()
 
-    # Calculer le statut de fraîcheur
     freshness_status = "unknown"
     days_until_expiry = None
     freshness_label = None
@@ -94,7 +93,6 @@ def _enrich_inventory_response(item: InventoryItem, db: Session) -> dict:
             freshness_status = "fresh"
             freshness_label = "Frais"
 
-    # Calculer les jours depuis l'ajout
     days_since_added = None
     if item.added_at:
         days_since_added = (datetime.utcnow() - item.added_at).days
@@ -112,17 +110,14 @@ def _enrich_inventory_response(item: InventoryItem, db: Session) -> dict:
         "source": item.source,
         "last_seen_at": item.last_seen_at.isoformat() if item.last_seen_at else None,
         "extra_data": item.extra_data,
-        # ✅ Infos produit
         "product_name": product.name if product else f"Produit #{item.product_id}",
         "product_category": product.category if product else "Non catégorisé",
         "product_tags": product.tags if product else [],
         "shelf_life_days": product.shelf_life_days if product else None,
-        # ✅ NOUVEAU: Statut de fraîcheur
         "freshness_status": freshness_status,
         "freshness_label": freshness_label,
         "days_until_expiry": days_until_expiry,
         "days_since_added": days_since_added,
-        # ✅ NOUVEAU: Indicateur d'ouverture
         "is_opened": item.open_date is not None,
     }
 
@@ -148,7 +143,7 @@ def add_inventory_item(
     db: Session = Depends(get_db),
 ):
     """
-    ✅ CORRIGÉ : Ajouter un article à l'inventaire SANS DUPLICATION
+    Ajouter un article à l'inventaire SANS DUPLICATION
 
     Logique :
     1. Chercher un produit existant (nom insensible à la casse)
@@ -161,37 +156,26 @@ def add_inventory_item(
     product = None
     product_name = None
 
-    # ============================================
-    # PHASE 1 : Identifier ou créer le produit
-    # ============================================
     if request.product_id:
-        # Cas 1 : ID fourni directement
         product = db.query(Product).filter(Product.id == request.product_id).first()
         if not product:
             raise HTTPException(status_code=404, detail="Product not found")
 
     elif request.product_name:
-        # Cas 2 : Nom fourni → chercher produit existant (insensible à la casse)
         product_name = request.product_name.strip()
 
-        # ✅ RECHERCHE INTELLIGENTE (case-insensitive)
-        product = (
-            db.query(Product)
-            .filter(Product.name.ilike(product_name))  # ILIKE = insensible à la casse
-            .first()
-        )
+        product = db.query(Product).filter(Product.name.ilike(product_name)).first()
 
         if not product:
-            # ✅ Créer nouveau produit seulement si vraiment absent
-            logger.info(f"🆕 Creating new product: {product_name}")
+            logger.info(f"Creating new product: {product_name}")
             product = Product(
                 name=product_name.capitalize(),
                 category=request.category or "Divers",
                 default_unit=request.unit or "pièce",
-                shelf_life_days=7,  # Valeur par défaut
+                shelf_life_days=7,
             )
             db.add(product)
-            db.flush()  # Obtenir l'ID
+            db.flush()
 
     else:
         raise HTTPException(
@@ -199,13 +183,9 @@ def add_inventory_item(
             detail="Vous devez fournir soit product_id, soit product_name",
         )
 
-    # ============================================
-    # PHASE 2 : Calculer la date d'expiration
-    # ============================================
     expiry_date = request.expiry_date
 
     if not expiry_date:
-        # ✅ CALCUL AUTOMATIQUE basé sur shelf_life_days
         if product.shelf_life_days:
             expiry_date = date.today() + timedelta(days=product.shelf_life_days)
             logger.info(
@@ -213,29 +193,24 @@ def add_inventory_item(
                 f"({product.shelf_life_days} days from today)"
             )
         else:
-            # Fallback : 7 jours par défaut
             expiry_date = date.today() + timedelta(days=7)
             logger.warning(
-                f"⚠️ No shelf_life_days for {product.name}, using default 7 days"
+                f"No shelf_life_days for {product.name}, using default 7 days"
             )
 
-    # ============================================
-    # PHASE 3 : Chercher item existant dans ce frigo
-    # ============================================
     existing_item = (
         db.query(InventoryItem)
         .filter(
             InventoryItem.fridge_id == fridge.id,
             InventoryItem.product_id == product.id,
-            InventoryItem.quantity > 0,  # Seulement items actifs
+            InventoryItem.quantity > 0,
         )
         .first()
     )
 
     if existing_item:
-        # ✅ CAS 1 : MISE À JOUR de l'item existant
         logger.info(
-            f"♻️ Updating existing item: {product.name} "
+            f"Updating existing item: {product.name} "
             f"(current: {existing_item.quantity}, adding: {request.quantity})"
         )
 
@@ -243,17 +218,14 @@ def add_inventory_item(
         existing_item.quantity += request.quantity
         existing_item.last_seen_at = datetime.utcnow()
 
-        # ✅ Mettre à jour la date d'expiration si la nouvelle est plus lointaine
         if expiry_date and (
             not existing_item.expiry_date or expiry_date > existing_item.expiry_date
         ):
             logger.info(
-                f"📅 Updating expiry date: "
-                f"{existing_item.expiry_date} → {expiry_date}"
+                f"Updating expiry date: " f"{existing_item.expiry_date} → {expiry_date}"
             )
             existing_item.expiry_date = expiry_date
 
-        # Créer l'événement
         event = Event(
             fridge_id=fridge.id,
             inventory_item_id=existing_item.id,
@@ -273,15 +245,14 @@ def add_inventory_item(
         db.refresh(existing_item)
 
         logger.info(
-            f"✅ Item updated: {product.name} "
+            f"Item updated: {product.name} "
             f"(total: {existing_item.quantity} {existing_item.unit})"
         )
 
         return _enrich_inventory_response(existing_item, db)
 
     else:
-        # ✅ CAS 2 : CRÉATION d'un nouvel item
-        logger.info(f"🆕 Creating new inventory item: {product.name}")
+        logger.info(f"Creating new inventory item: {product.name}")
 
         inventory_item = InventoryItem(
             fridge_id=fridge.id,
@@ -297,7 +268,6 @@ def add_inventory_item(
         db.add(inventory_item)
         db.flush()
 
-        # Créer l'événement
         event = Event(
             fridge_id=fridge.id,
             inventory_item_id=inventory_item.id,
@@ -315,7 +285,7 @@ def add_inventory_item(
         db.refresh(inventory_item)
 
         logger.info(
-            f"✅ New item created: {product.name} "
+            f"New item created: {product.name} "
             f"({request.quantity} {inventory_item.unit})"
         )
 
@@ -339,7 +309,7 @@ def update_inventory_item(
         raise HTTPException(status_code=404, detail="Inventory item not found")
 
     old_quantity = item.quantity
-    old_expiry_date = item.expiry_date  # ✅ NOUVEAU
+    old_expiry_date = item.expiry_date
 
     if request.quantity is not None:
         if request.quantity < 0:
@@ -350,7 +320,6 @@ def update_inventory_item(
     if request.open_date is not None:
         item.open_date = request.open_date
 
-    # ✅ NOUVEAU : Événement si quantité modifiée
     if request.quantity is not None and request.quantity != old_quantity:
         event = Event(
             fridge_id=fridge.id,
@@ -364,7 +333,6 @@ def update_inventory_item(
         )
         db.add(event)
 
-    # ✅ NOUVEAU : Événement si date d'expiration modifiée
     if request.expiry_date is not None and request.expiry_date != old_expiry_date:
         event = Event(
             fridge_id=fridge.id,
@@ -382,27 +350,23 @@ def update_inventory_item(
     db.commit()
     db.refresh(item)
 
-    # ✅ NOUVEAU : Déclencher une vérification d'alerte immédiate
     if request.expiry_date is not None:
         from app.services.alert_service import AlertService
 
         alert_service = AlertService(db)
 
-        # Vérifier uniquement les alertes d'expiration pour cet item
         config = fridge.config or {}
         expiry_days = config.get("expiry_warning_days", 3)
 
-        # Supprimer les anciennes alertes de ce type pour cet item
         db.query(Alert).filter(
             Alert.inventory_item_id == item.id,
             Alert.type.in_(["EXPIRY_SOON", "EXPIRED"]),
             Alert.status == "pending",
         ).delete()
 
-        # Créer une nouvelle alerte si nécessaire
         new_alert = alert_service._check_expiry_alert(item, fridge.id, expiry_days)
         if new_alert:
-            logger.info(f"✅ New expiry alert created after update: {item.id}")
+            logger.info(f"New expiry alert created after update: {item.id}")
 
         db.commit()
 

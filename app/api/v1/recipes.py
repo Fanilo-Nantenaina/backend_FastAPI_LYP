@@ -28,7 +28,7 @@ def list_recipes(
     difficulty: str = None,
     cuisine: str = None,
     limit: int = 50,
-    sort_by: str = Query("date", regex="^(date|name|time)$"),  # âœ… PLUS DE "match"
+    sort_by: str = Query("date", regex="^(date|name|time)$"),
     order: str = Query("desc", regex="^(asc|desc)$"),
 ):
     """Liste toutes les recettes disponibles
@@ -43,7 +43,6 @@ def list_recipes(
     if cuisine:
         query = query.filter(Recipe.extra_data["cuisine"].astext == cuisine)
 
-    # Tri selon le paramÃ¨tre
     if sort_by == "name":
         query = query.order_by(
             Recipe.title.desc() if order == "desc" else Recipe.title.asc()
@@ -54,7 +53,7 @@ def list_recipes(
             if order == "desc"
             else Recipe.preparation_time.asc()
         )
-    else:  # date par dÃ©faut
+    else:
         query = query.order_by(
             Recipe.created_at.desc() if order == "desc" else Recipe.created_at.asc()
         )
@@ -161,7 +160,7 @@ def list_feasible_recipes(
 ):
     """
     CU6: Consulter les recettes faisables avec l'inventaire actuel
-    ✅ AJOUT : Options de tri
+    AJOUT : Options de tri
     - sort_by: match (défaut), name, date, time
     - order: desc (défaut), asc
     """
@@ -193,7 +192,7 @@ async def suggest_recipe_with_ai(
     db: Session = Depends(get_db),
 ):
     """
-    🆕 NOUVELLE ROUTE: Suggestion IA de recette basée sur l'inventaire
+    NOUVELLE ROUTE: Suggestion IA de recette basée sur l'inventaire
 
     Utilise Gemini pour suggérer une recette créative basée sur:
     - Les produits disponibles dans le frigo
@@ -235,13 +234,12 @@ async def save_suggested_recipe(
     db: Session = Depends(get_db),
 ):
     """
-    🆕 Sauvegarde une recette suggérée par l'IA dans la base de données
+    Sauvegarde une recette suggérée par l'IA dans la base de données
 
     Permet de transformer une suggestion temporaire en recette permanente
     accessible à tous les utilisateurs.
     """
     try:
-        # Créer la recette de base
         recipe = Recipe(
             title=suggestion.title,
             description=suggestion.description,
@@ -257,9 +255,7 @@ async def save_suggested_recipe(
         db.add(recipe)
         db.flush()
 
-        # Créer les ingrédients
         for ingredient_data in suggestion.ingredients:
-            # Trouver ou créer le produit
             product = (
                 db.query(Product)
                 .filter(Product.name.ilike(ingredient_data["name"]))
@@ -276,7 +272,6 @@ async def save_suggested_recipe(
                 db.add(product)
                 db.flush()
 
-            # Créer l'ingrédient de recette
             recipe_ingredient = RecipeIngredient(
                 recipe_id=recipe.id,
                 product_id=product.id,
@@ -288,7 +283,7 @@ async def save_suggested_recipe(
         db.commit()
         db.refresh(recipe)
 
-        logger.info(f"✅ Saved AI-suggested recipe: {recipe.id} - {recipe.title}")
+        logger.info(f"Saved AI-suggested recipe: {recipe.id} - {recipe.title}")
 
         return recipe
 
@@ -306,17 +301,15 @@ def debug_shopping_lists_recipes(
     db: Session = Depends(get_db),
 ):
     """
-    🔍 DEBUG : Voir les liens entre recettes et listes de courses
+    DEBUG : Voir les liens entre recettes et listes de courses
     """
     from app.models.shopping_list import ShoppingList
     from app.models.recipe import Recipe
 
-    # Toutes les listes de courses de l'utilisateur
     shopping_lists = (
         db.query(ShoppingList).filter(ShoppingList.user_id == current_user.id).all()
     )
 
-    # Toutes les recettes
     recipes = db.query(Recipe).all()
 
     lists_info = []
@@ -328,7 +321,7 @@ def debug_shopping_lists_recipes(
             {
                 "id": sl.id,
                 "fridge_id": sl.fridge_id,
-                "recipe_id": sl.recipe_id,  # ✅ C'est ça qu'on vérifie
+                "recipe_id": sl.recipe_id,
                 "recipe_name": sl.recipe.title if sl.recipe else None,
                 "generated_by": sl.generated_by,
                 "status": sl.status,
@@ -345,7 +338,7 @@ def debug_shopping_lists_recipes(
             "title": r.title,
             "has_shopping_list": any(sl["recipe_id"] == r.id for sl in lists_info),
         }
-        for r in recipes[:20]  # Limiter à 20
+        for r in recipes[:20]
     ]
 
     return {

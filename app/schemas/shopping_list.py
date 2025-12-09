@@ -60,19 +60,19 @@ class GenerateShoppingListRequest(BaseModel):
 
 class GenerateFromIngredientsRequest(BaseModel):
     """
-    🆕 Requête pour générer une liste de courses depuis des ingrédients bruts
-    ✅ AJOUT : recipe_id optionnel pour lier à une recette
+    Requête pour générer une liste de courses depuis des ingrédients bruts
+    AJOUT : recipe_id optionnel pour lier à une recette
     """
 
     fridge_id: int = Field(..., gt=0)
     ingredients: List[Dict[str, Any]] = Field(..., min_length=1)
-    recipe_id: Optional[int] = None  # ✅ NOUVEAU
+    recipe_id: Optional[int] = None  # NOUVEAU
 
     class Config:
         json_schema_extra = {
             "example": {
                 "fridge_id": 1,
-                "recipe_id": 42,  # ✅ Optionnel
+                "recipe_id": 42,  # Optionnel
                 "ingredients": [
                     {"name": "Oignon", "quantity": 2, "unit": "pièces"},
                     {"name": "Crème fraîche", "quantity": 200, "unit": "ml"},

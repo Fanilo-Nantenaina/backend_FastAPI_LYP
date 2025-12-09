@@ -122,7 +122,7 @@ class AlertService:
         if days_until_expiry < 0:
             alert_type = "EXPIRED"
             message = (
-                f"🚫 {item.product.name} a expiré il y a {abs(days_until_expiry)} jour(s). "
+                f"{item.product.name} a expiré il y a {abs(days_until_expiry)} jour(s). "
                 f"Quantité : {item.quantity} {item.unit}. "
                 f"À retirer immédiatement du réfrigérateur."
             )
@@ -130,7 +130,7 @@ class AlertService:
         elif days_until_expiry == 0:
             alert_type = "EXPIRY_SOON"
             message = (
-                f"⚠️ {item.product.name} expire AUJOURD'HUI ! "
+                f"{item.product.name} expire AUJOURD'HUI ! "
                 f"Quantité : {item.quantity} {item.unit}. "
                 f"À consommer rapidement."
             )
@@ -138,7 +138,7 @@ class AlertService:
         elif days_until_expiry <= warning_days:
             alert_type = "EXPIRY_SOON"
             message = (
-                f"⏰ {item.product.name} expire dans {days_until_expiry} jour(s) "
+                f"{item.product.name} expire dans {days_until_expiry} jour(s) "
                 f"({item.expiry_date.strftime('%d/%m/%Y')}). "
                 f"Quantité : {item.quantity} {item.unit}."
             )
@@ -174,7 +174,7 @@ class AlertService:
             hours = int(hours_since_seen % 24)
 
             message = (
-                f"🔍 {item.product.name} n'a pas été détecté depuis "
+                f"{item.product.name} n'a pas été détecté depuis "
                 f"{days} jour(s) et {hours} heure(s). "
                 f"Quantité théorique : {item.quantity} {item.unit}. "
                 f"Le produit a peut-être été consommé ou déplacé."
@@ -199,20 +199,17 @@ class AlertService:
         """
         Crée une alerte si la quantité est en dessous du seuil configuré
         """
-        # ❌ AVANT (ligne 206)
-        # min_quantity = item.product.metadata.get("min_quantity")
-        
-        # ✅ APRÈS - Vérifier que metadata existe et est un dict
+
         if not item.product.extra_data:
             return None
-        
+
         min_quantity = item.product.extra_data.get("min_quantity")
         if min_quantity is None:
             return None
 
         if item.quantity <= min_quantity:
             message = (
-                f"📉 Stock faible pour {item.product.name}. "
+                f"Stock faible pour {item.product.name}. "
                 f"Quantité actuelle : {item.quantity} {item.unit}. "
                 f"Seuil minimum : {min_quantity} {item.unit}. "
                 f"Pensez à en racheter."

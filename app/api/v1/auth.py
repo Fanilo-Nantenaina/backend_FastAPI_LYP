@@ -74,7 +74,7 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
 @router.post("/refresh", response_model=TokenResponse)
 def refresh_token(request: RefreshRequest, db: Session = Depends(get_db)):
     """
-    ✅ NOUVEAU: Refresh du token d'accès
+    NOUVEAU: Refresh du token d'accès
 
     Permet au client de renouveler son access_token expiré
     sans avoir à se reconnecter

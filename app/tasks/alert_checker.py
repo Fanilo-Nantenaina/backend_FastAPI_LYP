@@ -24,7 +24,7 @@ def check_all_alerts():
     - RG11: Alertes d'objets perdus
     - RG12: Pas de duplication d'alertes
     """
-    logger.info("🔍 Starting alert check task...")
+    logger.info("Starting alert check task...")
 
     db = SessionLocal()
     try:
@@ -36,7 +36,7 @@ def check_all_alerts():
         )
 
         logger.info(
-            f"✅ Alert check completed. Stats: "
+            f"Alert check completed. Stats: "
             f"EXPIRY_SOON={stats['EXPIRY_SOON']}, "
             f"EXPIRED={stats['EXPIRED']}, "
             f"LOST_ITEM={stats['LOST_ITEM']}, "
@@ -47,7 +47,7 @@ def check_all_alerts():
         return stats
 
     except Exception as e:
-        logger.error(f"❌ Error during alert check: {e}", exc_info=True)
+        logger.error(f"Error during alert check: {e}", exc_info=True)
         raise
     finally:
         db.close()
@@ -59,7 +59,7 @@ def check_fridge_alerts(fridge_id: int):
 
     Utile pour les vérifications manuelles ou déclenchées par événement
     """
-    logger.info(f"🔍 Checking alerts for fridge {fridge_id}...")
+    logger.info(f"Checking alerts for fridge {fridge_id}...")
 
     db = SessionLocal()
     try:
@@ -69,11 +69,11 @@ def check_fridge_alerts(fridge_id: int):
             fridge_id=fridge_id, send_notifications=True
         )
 
-        logger.info(f"✅ Alert check completed for fridge {fridge_id}")
+        logger.info(f"Alert check completed for fridge {fridge_id}")
         return stats
 
     except Exception as e:
-        logger.error(f"❌ Error checking alerts for fridge {fridge_id}: {e}")
+        logger.error(f"Error checking alerts for fridge {fridge_id}: {e}")
         raise
     finally:
         db.close()
@@ -117,13 +117,13 @@ def send_daily_summaries():
                 failed_count += 1
 
         logger.info(
-            f"✅ Daily summaries sent. Success: {sent_count}, Failed: {failed_count}"
+            f"Daily summaries sent. Success: {sent_count}, Failed: {failed_count}"
         )
 
         return {"sent": sent_count, "failed": failed_count}
 
     except Exception as e:
-        logger.error(f"❌ Error during daily summary task: {e}", exc_info=True)
+        logger.error(f"Error during daily summary task: {e}", exc_info=True)
         raise
     finally:
         db.close()
@@ -150,7 +150,7 @@ def cleanup_old_data():
         deleted_events = event_service.cleanup_old_events(days=90)
 
         logger.info(
-            f"✅ Cleanup completed. "
+            f"Cleanup completed. "
             f"Deleted {deleted_alerts} old alerts, "
             f"{deleted_events} old events"
         )
@@ -158,7 +158,7 @@ def cleanup_old_data():
         return {"deleted_alerts": deleted_alerts, "deleted_events": deleted_events}
 
     except Exception as e:
-        logger.error(f"❌ Error during cleanup task: {e}", exc_info=True)
+        logger.error(f"Error during cleanup task: {e}", exc_info=True)
         raise
     finally:
         db.close()
@@ -170,7 +170,7 @@ def check_lost_items_only():
 
     Peut être exécuté plus fréquemment que la vérification complète
     """
-    logger.info("🔍 Checking for lost items only...")
+    logger.info("Checking for lost items only...")
 
     db = SessionLocal()
     try:
@@ -207,11 +207,11 @@ def check_lost_items_only():
                 if alert:
                     total_lost_items += 1
 
-        logger.info(f"✅ Lost items check completed. Found {total_lost_items} items")
+        logger.info(f"Lost items check completed. Found {total_lost_items} items")
         return {"lost_items": total_lost_items}
 
     except Exception as e:
-        logger.error(f"❌ Error checking lost items: {e}")
+        logger.error(f"Error checking lost items: {e}")
         raise
     finally:
         db.close()

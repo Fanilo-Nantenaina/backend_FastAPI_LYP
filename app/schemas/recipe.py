@@ -59,11 +59,12 @@ class RecipeResponse(BaseModel):
 
 class FeasibleRecipeResponse(BaseModel):
     """Réponse pour une recette avec infos de faisabilité"""
+
     recipe: RecipeResponse
     can_make: bool
     missing_ingredients: List[Dict[str, Any]]
     match_percentage: float
-    # ✅ AJOUTER ces champs
+    # AJOUTER ces champs
     shopping_list_id: Optional[int] = None
     shopping_list_status: Optional[str] = None
     ingredients_complete: bool = False
@@ -73,12 +74,6 @@ class FeasibleRecipeResponse(BaseModel):
 
     class Config:
         from_attributes = True
-
-
-# ========================================
-# NOUVEAUX SCHÉMAS POUR LA SUGGESTION IA
-# ========================================
-
 
 class SuggestedIngredient(BaseModel):
     """Ingrédient suggéré par l'IA"""

@@ -10,7 +10,7 @@ from typing import Optional
 security = HTTPBearer(auto_error=False)
 
 
-# ✅ VERSION STRICTE : Lance une exception si non authentifié
+# VERSION STRICTE : Lance une exception si non authentifié
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
@@ -53,7 +53,7 @@ async def get_current_user(
         )
 
 
-# ✅ VERSION OPTIONNELLE : Pour l'authentification hybride
+# VERSION OPTIONNELLE : Pour l'authentification hybride
 async def get_current_user_optional(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: Session = Depends(get_db),
@@ -82,7 +82,7 @@ async def get_current_user_optional(
 
 async def get_user_fridge(
     fridge_id: int,
-    current_user: User = Depends(get_current_user),  # ✅ Non optionnel
+    current_user: User = Depends(get_current_user),  # Non optionnel
     db: Session = Depends(get_db),
 ) -> Fridge:
     """Vérifie que le frigo appartient à l'utilisateur (RG2)"""

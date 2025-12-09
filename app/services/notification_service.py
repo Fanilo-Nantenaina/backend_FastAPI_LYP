@@ -1,7 +1,3 @@
-# ==================================================
-# services/notification_service.py - VERSION REFACTORISÉE
-# ==================================================
-
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from datetime import datetime
@@ -27,10 +23,6 @@ class NotificationService:
 
     def __init__(self, db: Session):
         self.db = db
-
-    # ========================================
-    # EMAIL NOTIFICATIONS
-    # ========================================
 
     def send_email_notification(
         self, user_email: str, subject: str, body: str, html_body: Optional[str] = None
@@ -93,10 +85,10 @@ class NotificationService:
     def _get_alert_email_subject(self, alert: Alert) -> str:
         """Génère le sujet de l'email selon le type d'alerte"""
         subjects = {
-            "EXPIRY_SOON": "🟡 Produits à consommer rapidement",
-            "EXPIRED": "🔴 Produits périmés dans votre frigo",
-            "LOST_ITEM": "🔍 Produits non détectés récemment",
-            "LOW_STOCK": "📉 Stock faible",
+            "EXPIRY_SOON": "Produits à consommer rapidement",
+            "EXPIRED": "Produits périmés dans votre frigo",
+            "LOST_ITEM": "Produits non détectés récemment",
+            "LOW_STOCK": "Stock faible",
         }
         return subjects.get(alert.type, "📬 Alerte Smart Fridge")
 
@@ -227,17 +219,13 @@ L'équipe Smart Fridge
             user_email=user.email, subject=subject, body=body
         )
 
-    # ========================================
-    # PUSH NOTIFICATIONS (FCM)
-    # ========================================
-
     def send_push_notification(
         self, user_id: int, title: str, body: str, data: Optional[Dict[str, Any]] = None
     ) -> bool:
         """
         Envoie une notification push via Firebase Cloud Messaging (FCM)
 
-        ✅ REFACTORISÉ : Utilise maintenant Fridge.kiosk_metadata pour stocker les FCM tokens
+        REFACTORISÉ : Utilise maintenant Fridge.kiosk_metadata pour stocker les FCM tokens
 
         Configuration nécessaire dans .env :
         - FCM_SERVER_KEY=your-fcm-server-key
@@ -255,7 +243,7 @@ L'équipe Smart Fridge
                 logger.warning("FCM server key not configured")
                 return False
 
-            # ✅ CHANGEMENT : Récupérer les tokens FCM depuis les frigos de l'utilisateur
+            # CHANGEMENT : Récupérer les tokens FCM depuis les frigos de l'utilisateur
             fridges = (
                 self.db.query(Fridge)
                 .filter(Fridge.user_id == user_id, Fridge.is_paired == True)
@@ -275,7 +263,7 @@ L'équipe Smart Fridge
 
             success_count = 0
 
-            # ✅ CHANGEMENT : Parcourir les frigos au lieu des devices
+            # CHANGEMENT : Parcourir les frigos au lieu des devices
             for fridge in fridges:
                 # Récupérer les tokens FCM stockés dans kiosk_metadata
                 fcm_tokens = []
@@ -328,10 +316,10 @@ L'équipe Smart Fridge
     def send_alert_push(self, alert: Alert, user_id: int) -> bool:
         """Envoie une notification push pour une alerte"""
         title_map = {
-            "EXPIRY_SOON": "🟡 Produits à consommer",
-            "EXPIRED": "🔴 Produits périmés",
-            "LOST_ITEM": "🔍 Produit non détecté",
-            "LOW_STOCK": "📉 Stock faible",
+            "EXPIRY_SOON": "Produits à consommer",
+            "EXPIRED": "Produits périmés",
+            "LOST_ITEM": "Produit non détecté",
+            "LOW_STOCK": "Stock faible",
         }
 
         title = title_map.get(alert.type, "📬 Nouvelle alerte")
@@ -347,10 +335,6 @@ L'équipe Smart Fridge
                 "action": "open_alert",
             },
         )
-
-    # ========================================
-    # SMS NOTIFICATIONS (Twilio)
-    # ========================================
 
     def send_sms_notification(self, phone_number: str, message: str) -> bool:
         """
@@ -396,10 +380,6 @@ L'équipe Smart Fridge
         message = f"Smart Fridge Alert: {alert.message}. Consultez l'app pour plus de détails."
 
         return self.send_sms_notification(phone_number, message)
-
-    # ========================================
-    # MULTI-CHANNEL NOTIFICATIONS
-    # ========================================
 
     def notify_alert(
         self, alert: Alert, user: User, channels: List[str] = ["push", "email"]
@@ -457,7 +437,7 @@ L'équipe Smart Fridge
             ]
         )
 
-        subject = f"⚠️ {len(expiring_items)} produits à consommer rapidement"
+        subject = f"{len(expiring_items)} produits à consommer rapidement"
         body = f"""
 Bonjour {user.name or 'cher utilisateur'},
 
@@ -475,13 +455,9 @@ L'équipe Smart Fridge
             user_email=user.email, subject=subject, body=body
         )
 
-    # ========================================
-    # UTILITAIRES
-    # ========================================
-
     def register_fcm_token(self, fridge_id: int, fcm_token: str, user_id: int) -> bool:
         """
-        ✅ NOUVEAU : Enregistre un token FCM pour un frigo
+        NOUVEAU : Enregistre un token FCM pour un frigo
 
         Appelé par l'app mobile après le pairing pour enregistrer son token FCM
 
@@ -528,7 +504,7 @@ L'équipe Smart Fridge
         self, fridge_id: int, fcm_token: str, user_id: int
     ) -> bool:
         """
-        ✅ NOUVEAU : Supprime un token FCM pour un frigo
+        NOUVEAU : Supprime un token FCM pour un frigo
 
         Appelé quand l'utilisateur se déconnecte ou désinstalle l'app
 

@@ -27,6 +27,8 @@ class Fridge(Base):
     # Informations utilisateur
     name = Column(String, nullable=False, default="Mon Frigo")
     location = Column(String)
+    
+    device_id = Column(String, unique=True, index=True)
 
     # Informations du kiosk physique
     kiosk_id = Column(

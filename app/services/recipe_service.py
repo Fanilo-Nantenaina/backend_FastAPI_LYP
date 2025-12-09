@@ -64,7 +64,7 @@ class RecipeService:
     ) -> List[Dict[str, Any]]:
         """
         CU6: Trouve les recettes faisables avec l'inventaire actuel
-        ✅ VERSION CORRIGÉE ET UNIQUE
+        VERSION CORRIGÉE ET UNIQUE
         """
         from app.models.shopping_list import ShoppingList, ShoppingListItem
 
@@ -97,9 +97,6 @@ class RecipeService:
                 recipe, available_products
             )
 
-            # ========================================
-            # Initialisation des variables
-            # ========================================
             shopping_list_status = None
             shopping_list_id = None
             ingredients_complete = can_make  # True si tout est dans le frigo
@@ -107,9 +104,6 @@ class RecipeService:
             total_missing_count = len(missing_ingredients)
             combined_percentage = match_percentage
 
-            # ========================================
-            # Chercher une liste de courses liée
-            # ========================================
             related_shopping_list = (
                 self.db.query(ShoppingList)
                 .filter(
@@ -141,18 +135,12 @@ class RecipeService:
                     else:
                         shopping_list_status = "pending"
 
-                    # ========================================
-                    # ✅ LOGIQUE PRINCIPALE
-                    # ========================================
-
                     if shopping_list_status == "completed":
                         # Liste complétée = tous les ingrédients disponibles
                         ingredients_complete = True
                         combined_percentage = 100.0
                         purchased_missing_count = total_missing_count
-                        logger.info(
-                            f"✅ Recipe '{recipe.title}': liste COMPLÉTÉE -> 100%"
-                        )
+                        logger.info(f"Recipe '{recipe.title}': liste COMPLÉTÉE -> 100%")
 
                     elif shopping_list_status in ["in_progress", "pending"]:
                         # Liste en cours : calculer le pourcentage combiné
@@ -192,9 +180,6 @@ class RecipeService:
                             f"combiné={combined_percentage}%"
                         )
 
-            # ========================================
-            # Construire le résultat
-            # ========================================
             feasible_recipes.append(
                 {
                     "recipe": recipe,
@@ -230,7 +215,7 @@ class RecipeService:
             )
 
         logger.info(
-            f"✅ Trouvé {len(feasible_recipes)} recettes (triées par {sort_by} {sort_order})"
+            f"Trouvé {len(feasible_recipes)} recettes (triées par {sort_by} {sort_order})"
         )
         return feasible_recipes
 
@@ -367,7 +352,7 @@ class RecipeService:
         self, fridge_id: int, user: User
     ) -> SuggestedRecipeResponse:
         """
-        ✅ AMÉLIORÉ: Suggère une recette créative basée sur l'inventaire actuel
+        AMÉLIORÉ: Suggère une recette créative basée sur l'inventaire actuel
         PREND EN COMPTE les restrictions alimentaires de l'utilisateur
         """
         import logging
@@ -416,11 +401,11 @@ class RecipeService:
                 match_percentage=0.0,
             )
 
-        # ✅ NOUVEAU : Restrictions alimentaires
+        # NOUVEAU : Restrictions alimentaires
         dietary_restrictions = user.dietary_restrictions or []
         preferred_cuisine = user.preferred_cuisine
 
-        # ✅ NOUVEAU : Construire la liste des restrictions pour le prompt
+        # NOUVEAU : Construire la liste des restrictions pour le prompt
         restrictions_text = ""
         if dietary_restrictions:
             restrictions_text = ", ".join(dietary_restrictions)
@@ -469,7 +454,7 @@ class RecipeService:
             ]
         )
 
-        # ✅ PROMPT AMÉLIORÉ avec restrictions alimentaires
+        # PROMPT AMÉLIORÉ avec restrictions alimentaires
         prompt = f"""Tu es un chef cuisinier créatif et INCLUSIF. Suggère UNE recette originale et délicieuse basée sur les ingrédients disponibles.
 
     INGRÉDIENTS DISPONIBLES DANS LE FRIGO:
@@ -479,7 +464,7 @@ class RecipeService:
     - Cuisine préférée: {cuisine_text}
     - Restrictions alimentaires: {restrictions_text}
 
-    ⚠️ RÈGLES CRITIQUES CONCERNANT LES RESTRICTIONS ALIMENTAIRES:
+    RÈGLES CRITIQUES CONCERNANT LES RESTRICTIONS ALIMENTAIRES:
     {self._generate_dietary_restrictions_rules(dietary_restrictions)}
 
     RÈGLES IMPORTANTES:
@@ -493,7 +478,7 @@ class RecipeService:
     6. Le temps de préparation doit être en minutes
     7. La difficulté doit être "easy", "medium" ou "hard"
     8. Sois créatif et propose quelque chose d'intéressant!
-    9. ⚠️ RESPECTE ABSOLUMENT les restrictions alimentaires de l'utilisateur
+    9. RESPECTE ABSOLUMENT les restrictions alimentaires de l'utilisateur
 
     Réponds UNIQUEMENT en JSON structuré."""
 
@@ -513,7 +498,7 @@ class RecipeService:
             data = json.loads(response.text)
             logger.info(f"AI response: {data.get('title', 'No title')}")
 
-            # ✅ NOUVEAU : Vérifier que les ingrédients suggérés respectent les restrictions
+            # NOUVEAU : Vérifier que les ingrédients suggérés respectent les restrictions
             suggested_ingredients_filtered = []
             for ing in data.get("ingredients", []):
                 ing_name = ing.get("name", "").strip()
@@ -523,7 +508,7 @@ class RecipeService:
                     ing_name, dietary_restrictions
                 ):
                     logger.warning(
-                        f"⚠️ AI suggested restricted ingredient: {ing_name}. Filtering it out."
+                        f"AI suggested restricted ingredient: {ing_name}. Filtering it out."
                     )
                     continue
 
@@ -594,7 +579,7 @@ class RecipeService:
         self, dietary_restrictions: List[str]
     ) -> str:
         """
-        ✅ NOUVEAU : Génère des règles claires pour l'IA selon les restrictions
+        NOUVEAU : Génère des règles claires pour l'IA selon les restrictions
         """
         if not dietary_restrictions:
             return "Aucune restriction alimentaire."
@@ -606,44 +591,44 @@ class RecipeService:
         # Règles spécifiques par type de restriction
         if "vegan" in restrictions_lower or "végétalien" in restrictions_lower:
             rules.append(
-                "- ❌ INTERDICTION ABSOLUE: viande, poisson, œufs, lait, beurre, fromage, miel, crème, yaourt"
+                "- INTERDICTION ABSOLUE: viande, poisson, œufs, lait, beurre, fromage, miel, crème, yaourt"
             )
             rules.append(
-                "- ✅ AUTORISÉ: légumes, fruits, céréales, légumineuses, noix, lait végétal"
+                "- AUTORISÉ: légumes, fruits, céréales, légumineuses, noix, lait végétal"
             )
 
         if "vegetarian" in restrictions_lower or "végétarien" in restrictions_lower:
-            rules.append("- ❌ INTERDICTION: viande, poisson, fruits de mer")
-            rules.append("- ✅ AUTORISÉ: œufs, produits laitiers, légumes, fruits")
+            rules.append("- INTERDICTION: viande, poisson, fruits de mer")
+            rules.append("- AUTORISÉ: œufs, produits laitiers, légumes, fruits")
 
         if "gluten-free" in restrictions_lower or "sans gluten" in restrictions_lower:
             rules.append(
-                "- ❌ INTERDICTION: blé, farine de blé, pain classique, pâtes de blé, semoule"
+                "- INTERDICTION: blé, farine de blé, pain classique, pâtes de blé, semoule"
             )
             rules.append(
-                "- ✅ AUTORISÉ: riz, quinoa, maïs, pommes de terre, farine sans gluten"
+                "- AUTORISÉ: riz, quinoa, maïs, pommes de terre, farine sans gluten"
             )
 
         if "dairy-free" in restrictions_lower or "sans lactose" in restrictions_lower:
-            rules.append("- ❌ INTERDICTION: lait, fromage, beurre, crème, yaourt")
+            rules.append("- INTERDICTION: lait, fromage, beurre, crème, yaourt")
             rules.append(
-                "- ✅ AUTORISÉ: lait végétal (amande, soja, avoine), margarine végétale"
+                "- AUTORISÉ: lait végétal (amande, soja, avoine), margarine végétale"
             )
 
         if "nut-free" in restrictions_lower or "sans noix" in restrictions_lower:
             rules.append(
-                "- ❌ INTERDICTION: noix, amandes, noisettes, cacahuètes, pistaches"
+                "- INTERDICTION: noix, amandes, noisettes, cacahuètes, pistaches"
             )
 
         if "halal" in restrictions_lower:
-            rules.append("- ❌ INTERDICTION: porc, alcool")
+            rules.append("- INTERDICTION: porc, alcool")
 
         if "kosher" in restrictions_lower or "casher" in restrictions_lower:
-            rules.append("- ❌ INTERDICTION: porc, fruits de mer, mélange viande+lait")
+            rules.append("- INTERDICTION: porc, fruits de mer, mélange viande+lait")
 
         # Règle générale
         rules.append(
-            f"\n⚠️ L'UTILISATEUR A LES RESTRICTIONS SUIVANTES: {', '.join(dietary_restrictions)}"
+            f"\nL'UTILISATEUR A LES RESTRICTIONS SUIVANTES: {', '.join(dietary_restrictions)}"
         )
         rules.append("NE SUGGÈRE AUCUN INGRÉDIENT QUI VIOLE CES RESTRICTIONS.")
 
@@ -653,7 +638,7 @@ class RecipeService:
         self, ingredient_name: str, dietary_restrictions: List[str]
     ) -> bool:
         """
-        ✅ NOUVEAU : Vérifie si un ingrédient viole les restrictions alimentaires
+        NOUVEAU : Vérifie si un ingrédient viole les restrictions alimentaires
 
         Utilisé comme filet de sécurité si l'IA suggère un ingrédient non conforme
         """
@@ -726,7 +711,7 @@ class RecipeService:
             for forbidden in forbidden_list:
                 if forbidden in ingredient_lower:
                     logger.warning(
-                        f"⚠️ Ingredient '{ingredient_name}' contains forbidden food '{forbidden}' "
+                        f"Ingredient '{ingredient_name}' contains forbidden food '{forbidden}' "
                         f"for restriction '{restriction}'"
                     )
                     return True

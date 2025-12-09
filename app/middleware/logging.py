@@ -9,7 +9,6 @@ class LogConfig(BaseModel):
     LOG_FORMAT: str = "%(levelprefix)s | %(asctime)s | %(name)s | %(funcName)s | %(lineno)d | %(message)s"
     LOG_LEVEL: str = "INFO"
 
-    # Configuration complète pour dictConfig
     version: int = 1
     disable_existing_loggers: bool = False
     formatters: Dict = {
@@ -40,6 +39,3 @@ def configure_logging():
     config = LogConfig()
     dictConfig(config.dict())
     logging.basicConfig(level=config.LOG_LEVEL)
-
-# Note : Vous devriez appeler configure_logging() au démarrage de votre application
-# (ex: dans main.py) pour que cette configuration prenne effet.

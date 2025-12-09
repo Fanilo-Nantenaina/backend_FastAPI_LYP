@@ -34,12 +34,6 @@ class FridgeResponse(BaseModel):
     class Config:
         from_attributes = True
 
-
-# ========================================
-# SCHÉMAS KIOSK
-# ========================================
-
-
 class KioskInitResponse(BaseModel):
     """Réponse après initialisation du kiosk"""
 
@@ -57,12 +51,6 @@ class KioskStatusResponse(BaseModel):
     fridge_name: Optional[str]
     last_heartbeat: Optional[str]
     paired_at: Optional[str]
-
-
-# ========================================
-# SCHÉMAS CLIENT
-# ========================================
-
 
 class PairingRequest(BaseModel):
     """Requête de pairing depuis le client mobile"""

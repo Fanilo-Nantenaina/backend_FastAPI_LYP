@@ -18,7 +18,7 @@ from app.models.event import Event
 from app.schemas.vision import DetectedProduct
 
 
-# ✅ BASE DE DONNÉES de durées de conservation par défaut
+# BASE DE DONNÉES de durées de conservation par défaut
 DEFAULT_SHELF_LIFE = {
     # Produits laitiers
     "lait": 7,
@@ -48,7 +48,7 @@ DEFAULT_SHELF_LIFE = {
     "poivron": 14,
     "oignon": 30,
     "pomme de terre": 60,
-    "gingembre": 30,  # ✅ AJOUT
+    "gingembre": 30,  # AJOUT
     "ail": 60,
     "chou": 14,
     "brocoli": 7,
@@ -197,7 +197,7 @@ class VisionService:
     ) -> Dict[str, Any]:
         """
         Analyse l'image et met à jour l'inventaire
-        ✅ CORRECTION: Toujours définir une date d'expiration
+        CORRECTION: Toujours définir une date d'expiration
         """
 
         detected_products = await self._analyze_image_with_gemini(image_file)
@@ -216,13 +216,13 @@ class VisionService:
             elif result["action"] == "updated":
                 items_updated.append(result["item"])
 
-            # ✅ Plus besoin de needs_manual_entry car on définit toujours la date
+            # Plus besoin de needs_manual_entry car on définit toujours la date
 
         from app.models.event import Event
 
         event = Event(
             fridge_id=fridge_id,
-            type="ITEM_DETECTED",  # ✅ Changé de INVENTORY_UPDATED
+            type="ITEM_DETECTED",  # Changé de INVENTORY_UPDATED
             payload={
                 "source": "vision_scan",
                 "timestamp": datetime.utcnow().isoformat(),
@@ -320,7 +320,7 @@ class VisionService:
         self, detected: DetectedProduct, fridge_id: int
     ) -> Dict[str, Any]:
         """
-        ✅ CORRECTION: Garantit TOUJOURS une date d'expiration
+        CORRECTION: Garantit TOUJOURS une date d'expiration
         """
         import logging
 
@@ -328,27 +328,27 @@ class VisionService:
 
         product = self._find_or_create_product(detected)
 
-        # ✅ ÉTAPE 1: Essayer de lire la date sur l'emballage
+        # ÉTAPE 1: Essayer de lire la date sur l'emballage
         expiry_date = None
         if detected.expiry_date_text:
             expiry_date = self._parse_expiry_date(detected.expiry_date_text)
 
-        # ✅ ÉTAPE 2: Sinon, utiliser l'estimation de l'IA
+        # ÉTAPE 2: Sinon, utiliser l'estimation de l'IA
         if not expiry_date and detected.estimated_shelf_life_days:
             expiry_date = date.today() + timedelta(
                 days=detected.estimated_shelf_life_days
             )
 
-        # ✅ ÉTAPE 3: Sinon, utiliser la base de données produit
+        # ÉTAPE 3: Sinon, utiliser la base de données produit
         if not expiry_date and product.shelf_life_days:
             expiry_date = date.today() + timedelta(days=product.shelf_life_days)
 
-        # ✅ ÉTAPE 4: Sinon, utiliser notre base de connaissances
+        # ÉTAPE 4: Sinon, utiliser notre base de connaissances
         if not expiry_date:
             days = self._estimate_shelf_life(detected.product_name, detected.category)
             expiry_date = date.today() + timedelta(days=days)
 
-        # ✅ À ce stade, expiry_date ne peut JAMAIS être None
+        # À ce stade, expiry_date ne peut JAMAIS être None
 
         existing_item = self._find_existing_inventory_item(
             fridge_id=fridge_id,
@@ -362,8 +362,8 @@ class VisionService:
             existing_item.quantity += detected.count
             existing_item.last_seen_at = now
 
-            # ✅ DEBUG : Identifier la source exacte du problème
-            logger.info(f"🔍 Debug expiry dates for product '{product.name}':")
+            # DEBUG : Identifier la source exacte du problème
+            logger.info(f"Debug expiry dates for product '{product.name}':")
             logger.info(
                 f"  - existing_item.expiry_date: {existing_item.expiry_date} (type: {type(existing_item.expiry_date).__name__})"
             )
@@ -371,7 +371,7 @@ class VisionService:
                 f"  - new expiry_date: {expiry_date} (type: {type(expiry_date).__name__})"
             )
 
-            # ✅ SUPER DÉFENSIF : Convertir les deux en date avant comparaison
+            # SUPER DÉFENSIF : Convertir les deux en date avant comparaison
             existing_expiry = existing_item.expiry_date
             new_expiry = expiry_date
 
@@ -395,12 +395,12 @@ class VisionService:
                 else:
                     # Types incompatibles, forcer la mise à jour
                     logger.warning(
-                        f"  ⚠️ Type mismatch detected, forcing update to {new_expiry}"
+                        f"  Type mismatch detected, forcing update to {new_expiry}"
                     )
                     existing_item.expiry_date = new_expiry
             except Exception as e:
                 # Fallback ultime : toujours définir la nouvelle date
-                logger.error(f"  ❌ Error comparing dates: {e}")
+                logger.error(f"  Error comparing dates: {e}")
                 logger.error(f"  ➡️ Fallback: forcing expiry_date to {new_expiry}")
                 existing_item.expiry_date = new_expiry
 
@@ -424,7 +424,7 @@ class VisionService:
             }
         else:
             # Nouvel item
-            logger.info(f"🆕 Creating new item for product '{product.name}':")
+            logger.info(f"Creating new item for product '{product.name}':")
             logger.info(
                 f"  - expiry_date: {expiry_date} (type: {type(expiry_date).__name__})"
             )
@@ -435,7 +435,7 @@ class VisionService:
                 quantity=detected.count,
                 initial_quantity=detected.count,
                 unit=product.default_unit,
-                expiry_date=expiry_date,  # ✅ Jamais None
+                expiry_date=expiry_date,  # Jamais None
                 source="vision",
                 last_seen_at=now,
             )
@@ -463,7 +463,7 @@ class VisionService:
 
     def _estimate_shelf_life(self, product_name: str, category: str) -> int:
         """
-        ✅ Estime intelligemment la durée de conservation
+        Estime intelligemment la durée de conservation
 
         Ordre de priorité:
         1. Nom exact du produit
@@ -517,19 +517,19 @@ class VisionService:
         normalized_search = normalize_product_name(detected_name)
 
         logger.info(
-            f"🔍 Searching product: '{detected_name}' (normalized: '{normalized_search}')"
+            f"Searching product: '{detected_name}' (normalized: '{normalized_search}')"
         )
 
-        # ✅ ÉTAPE 1: Recherche exacte (cas idéal)
+        # ÉTAPE 1: Recherche exacte (cas idéal)
         product = (
             self.db.query(Product).filter(Product.name.ilike(detected_name)).first()
         )
 
         if product:
-            logger.info(f"  ✅ Found exact match: '{product.name}' (ID: {product.id})")
+            logger.info(f"  Found exact match: '{product.name}' (ID: {product.id})")
             return product
 
-        # ✅ ÉTAPE 2: Recherche par nom normalisé
+        # ÉTAPE 2: Recherche par nom normalisé
         all_products = self.db.query(Product).all()
 
         for prod in all_products:
@@ -537,9 +537,7 @@ class VisionService:
 
             # Comparaison stricte des noms normalisés
             if normalized_db == normalized_search:
-                logger.info(
-                    f"  ✅ Found normalized match: '{prod.name}' (ID: {prod.id})"
-                )
+                logger.info(f"  Found normalized match: '{prod.name}' (ID: {prod.id})")
                 return prod
 
             # Comparaison partielle (contient)
@@ -554,11 +552,11 @@ class VisionService:
                     normalized_db
                 ):
                     logger.info(
-                        f"  ✅ Found partial match: '{prod.name}' (ID: {prod.id}, similarity: {similarity:.2%})"
+                        f"  Found partial match: '{prod.name}' (ID: {prod.id}, similarity: {similarity:.2%})"
                     )
                     return prod
 
-        # ✅ ÉTAPE 3: Recherche par catégorie + mots-clés
+        # ÉTAPE 3: Recherche par catégorie + mots-clés
         category_lower = detected.category.lower()
         words = normalized_search.split()
 
@@ -574,12 +572,12 @@ class VisionService:
                 # Vérifier si tous les mots-clés sont présents
                 if all(word in normalized_db for word in words):
                     logger.info(
-                        f"  ✅ Found category+keyword match: '{prod.name}' (ID: {prod.id})"
+                        f"  Found category+keyword match: '{prod.name}' (ID: {prod.id})"
                     )
                     return prod
 
-        # ✅ ÉTAPE 4: Aucune correspondance, créer nouveau produit
-        logger.info(f"  🆕 No match found, creating new product: '{detected_name}'")
+        # ÉTAPE 4: Aucune correspondance, créer nouveau produit
+        logger.info(f"  No match found, creating new product: '{detected_name}'")
 
         shelf_life = self._estimate_shelf_life(detected_name, detected.category)
 
@@ -592,7 +590,7 @@ class VisionService:
         self.db.add(product)
         self.db.flush()
 
-        logger.info(f"  ✅ Created product: '{product.name}' (ID: {product.id})")
+        logger.info(f"  Created product: '{product.name}' (ID: {product.id})")
         return product
 
     def _parse_expiry_date(self, date_text: str) -> Optional[date]:

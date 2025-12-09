@@ -1,11 +1,8 @@
-# ==================================================
-# api/v1/fridges.py - VERSION REFACTORISÉE COMPLÈTE
-# ==================================================
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime
+from pydantic import BaseModel
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
@@ -24,31 +21,52 @@ from app.schemas.fridge import (
 router = APIRouter(prefix="/fridges", tags=["Fridges"])
 
 
-# ========================================
-# ROUTES KIOSK (appelées par le frigo Samsung)
-# ========================================
+class KioskInitRequest(BaseModel):
+    device_id: Optional[str] = None
+    device_name: Optional[str] = None
 
 
 @router.post("/kiosk/init", response_model=KioskInitResponse)
 def init_kiosk(
-    device_name: Optional[str] = None,
+    request: KioskInitRequest,
     db: Session = Depends(get_db),
 ):
     """
-    🔵 KIOSK ROUTE
-
     Initialise un nouveau frigo (kiosk physique).
-    Appelé au démarrage du kiosk Samsung.
-
-    Returns:
-        - kiosk_id : UUID du kiosk (à stocker localement)
-        - pairing_code : Code 6 chiffres à afficher
-        - expires_in_minutes : Durée de validité du code
+    Si device_id fourni et existe déjà → restaure le kiosk existant
     """
     service = FridgeService(db)
-    result = service.init_kiosk(device_name=device_name)
+    result = service.init_kiosk(
+        device_id=request.device_id, device_name=request.device_name
+    )
 
     return result
+
+
+@router.get("/kiosk/device/{device_id}", response_model=Dict[str, Any])
+def get_kiosk_by_device_id(
+    device_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    NOUVELLE ROUTE : Récupère un kiosk par son device_id matériel
+
+    Permet au kiosk de se "restaurer" après effacement du cache
+    """
+    service = FridgeService(db)
+
+    fridge = db.query(Fridge).filter(Fridge.device_id == device_id).first()
+
+    if not fridge:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    return {
+        "kiosk_id": fridge.kiosk_id,
+        "is_paired": fridge.is_paired,
+        "fridge_id": fridge.id if fridge.is_paired else None,
+        "fridge_name": fridge.name if fridge.is_paired else None,
+        "pairing_code": fridge.pairing_code if not fridge.is_paired else None,
+    }
 
 
 @router.post("/kiosk/{kiosk_id}/heartbeat")
@@ -57,8 +75,6 @@ def kiosk_heartbeat(
     db: Session = Depends(get_db),
 ):
     """
-    🔵 KIOSK ROUTE
-
     Heartbeat du kiosk (appelé toutes les 30s).
     Maintient la connexion active.
     """
@@ -77,8 +93,6 @@ def get_kiosk_status(
     db: Session = Depends(get_db),
 ):
     """
-    🔵 KIOSK ROUTE
-
     Vérifie si le kiosk a été pairé.
     Le kiosk poll cette route toutes les 5s après génération du code.
     """
@@ -91,11 +105,6 @@ def get_kiosk_status(
     return status
 
 
-# ========================================
-# ROUTES CLIENT (appelées par l'app mobile)
-# ========================================
-
-
 @router.post("/pair", response_model=PairingResponse)
 def pair_fridge(
     request: PairingRequest,
@@ -103,8 +112,6 @@ def pair_fridge(
     db: Session = Depends(get_db),
 ):
     """
-    📱 CLIENT ROUTE
-
     Lie un frigo existant à l'utilisateur connecté.
 
     Flow :
@@ -146,8 +153,6 @@ def list_fridges(
     db: Session = Depends(get_db),
 ):
     """
-    📱 CLIENT ROUTE
-
     Liste tous les frigos de l'utilisateur
     """
     service = FridgeService(db)
@@ -163,8 +168,6 @@ def get_fridge(
     db: Session = Depends(get_db),
 ):
     """
-    📱 CLIENT ROUTE
-
     Récupère un frigo spécifique
     """
     service = FridgeService(db)
@@ -184,8 +187,6 @@ def update_fridge(
     db: Session = Depends(get_db),
 ):
     """
-    📱 CLIENT ROUTE
-
     Modifie le nom/localisation du frigo après pairing.
     """
     service = FridgeService(db)
@@ -211,10 +212,8 @@ def unpair_fridge(
     db: Session = Depends(get_db),
 ):
     """
-    📱 CLIENT ROUTE
-
     Délie un frigo (reset à unpaired).
-    ⚠️ Supprime également tout l'inventaire !
+    Supprime également tout l'inventaire !
     """
     service = FridgeService(db)
     success = service.unpair_fridge(fridge_id, current_user.id)
@@ -232,13 +231,10 @@ def get_fridge_statistics(
     db: Session = Depends(get_db),
 ):
     """
-    📱 CLIENT ROUTE
-
     Statistiques détaillées du frigo
     """
     service = FridgeService(db)
 
-    # Vérifier la propriété
     fridge = service.get_fridge_by_id(fridge_id, current_user.id)
     if not fridge:
         raise HTTPException(status_code=404, detail="Frigo non trouvé")
@@ -254,13 +250,10 @@ def get_fridge_summary(
     db: Session = Depends(get_db),
 ):
     """
-    📱 CLIENT ROUTE
-
     Résumé rapide du frigo
     """
     service = FridgeService(db)
 
-    # Vérifier la propriété
     fridge = service.get_fridge_by_id(fridge_id, current_user.id)
     if not fridge:
         raise HTTPException(status_code=404, detail="Frigo non trouvé")

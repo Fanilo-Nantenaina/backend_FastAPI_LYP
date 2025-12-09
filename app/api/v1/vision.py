@@ -18,7 +18,6 @@ async def analyze_fridge_image(
     db: Session = Depends(get_db),
 ):
     """
-    🔵 KIOSK ROUTE
 
     CU2: Enregistrer un Article via IA/Vision
 
@@ -30,16 +29,14 @@ async def analyze_fridge_image(
     5. Demande confirmation manuelle si date de péremption non détectable
     """
 
-    # ✅ CORRECTION: Vérifier que le kiosk a accès à ce frigo
     if not x_kiosk_id:
         raise HTTPException(status_code=401, detail="X-Kiosk-ID header required")
 
-    # ✅ CORRECTION: Utiliser la valeur string du header, pas l'objet Header
     fridge = (
         db.query(Fridge)
         .filter(
             Fridge.id == fridge_id,
-            Fridge.kiosk_id == x_kiosk_id,  # ✅ C'est maintenant un string
+            Fridge.kiosk_id == x_kiosk_id,
             Fridge.is_paired == True,
         )
         .first()
@@ -70,7 +67,6 @@ async def manual_expiry_entry(
     db: Session = Depends(get_db),
 ):
     """
-    🔵 KIOSK ROUTE
 
     Entrée manuelle de la date de péremption si non détectée par l'IA
 
@@ -78,11 +74,9 @@ async def manual_expiry_entry(
     la date de péremption, et peut la saisir via cette route.
     """
 
-    # ✅ Vérifier le kiosk_id
     if not x_kiosk_id:
         raise HTTPException(status_code=401, detail="X-Kiosk-ID header required")
 
-    # ✅ Vérifier que le kiosk a accès à ce frigo
     fridge = (
         db.query(Fridge)
         .filter(

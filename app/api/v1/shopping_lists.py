@@ -55,8 +55,8 @@ def _enrich_shopping_list_response(shopping_list: ShoppingList, db: Session) -> 
         "name": shopping_list.name,
         "created_at": shopping_list.created_at,
         "generated_by": shopping_list.generated_by,
-        "recipe_id": shopping_list.recipe_id,  # ✅ AJOUT CRITIQUE
-        "status": shopping_list.status,  # ✅ BONUS (si vous l'utilisez)
+        "recipe_id": shopping_list.recipe_id,
+        "status": shopping_list.status,
         "items": items,
     }
 
@@ -70,7 +70,7 @@ def create_shopping_list(
     """
     CU4: Créer manuellement une liste de courses
 
-    ✅ AMÉLIORÉ : Accepte les articles personnalisés (sans product_id)
+    AMÉLIORÉ : Accepte les articles personnalisés (sans product_id)
     - Si product_id fourni : utilise le produit existant
     - Si product_name fourni : crée le produit ou trouve un existant
     """
@@ -98,11 +98,9 @@ def create_shopping_list(
     for item_data in request.items:
         product_id = item_data.product_id
 
-        # ✅ Si pas de product_id, chercher ou créer le produit par son nom
         if product_id is None and item_data.product_name:
             product_name = item_data.product_name.strip()
 
-            # Chercher un produit existant avec ce nom (insensible à la casse)
             existing_product = (
                 db.query(Product).filter(Product.name.ilike(product_name)).first()
             )
@@ -110,7 +108,6 @@ def create_shopping_list(
             if existing_product:
                 product_id = existing_product.id
             else:
-                # Créer un nouveau produit
                 new_product = Product(
                     name=product_name.capitalize(),
                     category="Divers",
@@ -121,7 +118,6 @@ def create_shopping_list(
                 db.flush()
                 product_id = new_product.id
 
-        # Créer l'item de la liste
         if product_id:
             item = ShoppingListItem(
                 shopping_list_id=shopping_list.id,
@@ -152,7 +148,6 @@ def generate_shopping_list(
     if not fridge:
         raise HTTPException(status_code=404, detail="Fridge not found or access denied")
 
-    # ✅ Déterminer le nom ET le recipe_id AVANT la génération
     shopping_list_name = "Liste personnalisée"
     recipe_id = None
 
@@ -161,22 +156,20 @@ def generate_shopping_list(
             recipe = db.query(Recipe).filter(Recipe.id == request.recipe_ids[0]).first()
             if recipe:
                 shopping_list_name = recipe.title
-                recipe_id = recipe.id  # ✅ Défini ICI
+                recipe_id = recipe.id
         else:
             shopping_list_name = f"Liste pour {len(request.recipe_ids)} recettes"
 
     shopping_service = ShoppingService(db)
 
-    # ✅ MODIFIÉ : Passer recipe_id directement au service
     shopping_list = shopping_service.generate_shopping_list(
         user_id=current_user.id,
         fridge_id=request.fridge_id,
         recipe_ids=request.recipe_ids,
         name=shopping_list_name,
-        recipe_id=recipe_id,  # ✅ NOUVEAU paramètre
+        recipe_id=recipe_id,
     )
 
-    # Plus besoin d'assigner manuellement
     db.commit()
     db.refresh(shopping_list)
 
@@ -204,13 +197,11 @@ def complete_shopping_list(
     if not shopping_list:
         raise HTTPException(status_code=404, detail="Shopping list not found")
 
-    # Marquer tous les items comme purchased
     db.query(ShoppingListItem).filter(
         ShoppingListItem.shopping_list_id == list_id,
         ShoppingListItem.status == "pending",
     ).update({"status": "purchased"})
 
-    # Marquer la liste comme complétée
     shopping_list.status = "completed"
     shopping_list.completed_at = datetime.utcnow()
 
@@ -232,10 +223,9 @@ def generate_shopping_list_from_ingredients(
     db: Session = Depends(get_db),
 ):
     """
-    🆕 Génère une liste de courses depuis des ingrédients bruts (suggestion IA)
-    ✅ CORRIGÉ : Accepte maintenant un recipe_id optionnel
+    Génère une liste de courses depuis des ingrédients bruts (suggestion IA)
+    CORRIGÉ : Accepte maintenant un recipe_id optionnel
     """
-    # Vérifier que le frigo appartient à l'utilisateur
     fridge = (
         db.query(Fridge)
         .filter(Fridge.id == request.fridge_id, Fridge.user_id == current_user.id)
@@ -245,7 +235,6 @@ def generate_shopping_list_from_ingredients(
     if not fridge:
         raise HTTPException(status_code=404, detail="Fridge not found or access denied")
 
-    # Créer la liste de courses
     shopping_list = ShoppingList(
         user_id=current_user.id,
         fridge_id=request.fridge_id,
@@ -268,12 +257,10 @@ def generate_shopping_list_from_ingredients(
         if not ingredient_name:
             continue
 
-        # Chercher le produit dans la base de données
         product = (
             db.query(Product).filter(Product.name.ilike(f"%{ingredient_name}%")).first()
         )
 
-        # Si le produit n'existe pas, le créer
         if not product:
             product = Product(
                 name=ingredient_name.capitalize(),
@@ -283,7 +270,6 @@ def generate_shopping_list_from_ingredients(
             db.add(product)
             db.flush()
 
-        # Ajouter l'item à la liste
         item = ShoppingListItem(
             shopping_list_id=shopping_list.id,
             product_id=product.id,
@@ -298,7 +284,7 @@ def generate_shopping_list_from_ingredients(
     db.refresh(shopping_list)
 
     logger.info(
-        f"✅ Created shopping list {shopping_list.id} with {items_added} items, "
+        f"Created shopping list {shopping_list.id} with {items_added} items, "
         f"recipe_id={shopping_list.recipe_id}"
     )
 
@@ -338,8 +324,7 @@ def list_shopping_lists(
     return [_enrich_shopping_list_response(lst, db) for lst in lists]
 
 
-# ✅ MODIFIER la route get_shopping_list
-@router.get("/{list_id}", response_model=Dict)  # Dict au lieu de ShoppingListResponse
+@router.get("/{list_id}", response_model=Dict) 
 def get_shopping_list(
     list_id: int,
     current_user: User = Depends(get_current_user),
@@ -355,7 +340,6 @@ def get_shopping_list(
     if not shopping_list:
         raise HTTPException(status_code=404, detail="Shopping list not found")
 
-    # ✅ Enrichir avec les noms de produits
     return _enrich_shopping_list_response(shopping_list, db)
 
 
@@ -395,14 +379,12 @@ def update_item_status(
 
     item.status = status
 
-    # ✅ NOUVEAU : Mettre à jour automatiquement le statut de la liste
     all_items = (
         db.query(ShoppingListItem)
         .filter(ShoppingListItem.shopping_list_id == list_id)
         .all()
     )
 
-    # Vérifier si tous les items sont "purchased"
     all_purchased = all(i.status == "purchased" for i in all_items)
     any_pending = any(i.status == "pending" for i in all_items)
 
@@ -447,7 +429,6 @@ def mark_all_as_purchased(
         .update({"status": "purchased"})
     )
 
-    # ✅ NOUVEAU : Mettre à jour le statut de la liste
     shopping_list.status = "completed"
     shopping_list.completed_at = datetime.utcnow()
 
@@ -470,7 +451,7 @@ def add_item_to_list(
     """
     Ajouter un item à une liste existante
 
-    ✅ AMÉLIORÉ : Accepte product_id OU product_name
+    AMÉLIORÉ : Accepte product_id OU product_name
     """
     shopping_list = (
         db.query(ShoppingList)
@@ -483,11 +464,9 @@ def add_item_to_list(
 
     product_id = item_data.product_id
 
-    # ✅ Si pas de product_id, chercher ou créer le produit par son nom
     if product_id is None and item_data.product_name:
         product_name = item_data.product_name.strip()
 
-        # Chercher un produit existant avec ce nom (insensible à la casse)
         existing_product = (
             db.query(Product).filter(Product.name.ilike(product_name)).first()
         )
@@ -495,7 +474,6 @@ def add_item_to_list(
         if existing_product:
             product_id = existing_product.id
         else:
-            # Créer un nouveau produit
             new_product = Product(
                 name=product_name.capitalize(),
                 category="Divers",
@@ -512,7 +490,6 @@ def add_item_to_list(
             detail="Vous devez fournir soit product_id, soit product_name",
         )
 
-    # Vérifier si l'item existe déjà dans la liste
     existing_item = (
         db.query(ShoppingListItem)
         .filter(
@@ -523,12 +500,10 @@ def add_item_to_list(
     )
 
     if existing_item:
-        # ✅ Si l'item existe déjà, augmenter la quantité
         existing_item.quantity += item_data.quantity
         db.commit()
         return {"message": "Quantité mise à jour", "item_id": existing_item.id}
 
-    # Créer le nouvel item
     item = ShoppingListItem(
         shopping_list_id=list_id,
         product_id=product_id,
@@ -609,7 +584,7 @@ async def suggest_diverse_products(
     db: Session = Depends(get_db),
 ):
     """
-    🆕 Suggère des produits variés basés sur l'inventaire actuel
+    Suggère des produits variés basés sur l'inventaire actuel
     Utilise Gemini pour proposer des alternatives intéressantes
     """
     fridge_id = request.get("fridge_id")
@@ -617,7 +592,6 @@ async def suggest_diverse_products(
     if not fridge_id:
         raise HTTPException(status_code=400, detail="fridge_id required")
 
-    # Vérifier l'accès au frigo
     fridge = (
         db.query(Fridge)
         .filter(Fridge.id == fridge_id, Fridge.user_id == current_user.id)
@@ -627,7 +601,6 @@ async def suggest_diverse_products(
     if not fridge:
         raise HTTPException(status_code=404, detail="Fridge not found")
 
-    # Récupérer l'inventaire actuel
     inventory = (
         db.query(InventoryItem)
         .filter(InventoryItem.fridge_id == fridge_id, InventoryItem.quantity > 0)
@@ -640,7 +613,6 @@ async def suggest_diverse_products(
             "message": "Votre frigo est vide. Ajoutez des produits pour obtenir des suggestions.",
         }
 
-    # Construire le contexte pour Gemini
     current_products = []
     for item in inventory:
         product = db.query(Product).filter(Product.id == item.product_id).first()
@@ -654,13 +626,11 @@ async def suggest_diverse_products(
                 }
             )
 
-    # Restrictions alimentaires
     dietary_restrictions = current_user.dietary_restrictions or []
     restrictions_text = (
         ", ".join(dietary_restrictions) if dietary_restrictions else "Aucune"
     )
 
-    # Prompt pour Gemini
     prompt = f"""Tu es un assistant culinaire intelligent. Analyse l'inventaire actuel et suggère 8-12 produits VARIÉS et INTÉRESSANTS à acheter.
 
 INVENTAIRE ACTUEL :
@@ -735,11 +705,11 @@ Réponds en JSON avec cette structure :
         data = json.loads(response.text)
 
         logger.info(
-            f"✅ Generated {len(data['suggested_products'])} diverse product suggestions"
+            f"Generated {len(data['suggested_products'])} diverse product suggestions"
         )
 
         return data
 
     except Exception as e:
-        logger.error(f"❌ Error generating suggestions: {e}")
+        logger.error(f"Error generating suggestions: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur IA: {str(e)}")

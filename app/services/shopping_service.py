@@ -34,26 +34,26 @@ class ShoppingService:
         fridge_id: int,
         name: Optional[str] = None,
         recipe_ids: Optional[List[int]] = None,
-        recipe_id: Optional[int] = None,  # ✅ NOUVEAU paramètre
+        recipe_id: Optional[int] = None,  # NOUVEAU paramètre
         include_suggestions: bool = True,
     ) -> ShoppingList:
         """
         CU4: Génère automatiquement une liste de courses intelligente
 
-        ✅ AMÉLIORÉ : Accepte maintenant recipe_id directement
+        AMÉLIORÉ : Accepte maintenant recipe_id directement
         """
         logger.info(f"Generating shopping list for fridge {fridge_id}")
 
         user = self.db.query(User).filter(User.id == user_id).first()
         dietary_restrictions = user.dietary_restrictions if user else []
 
-        # ✅ MODIFIÉ : Créer avec recipe_id dès le début
+        # MODIFIÉ : Créer avec recipe_id dès le début
         shopping_list = ShoppingList(
             user_id=user_id,
             fridge_id=fridge_id,
             generated_by="auto_recipe" if recipe_ids else "ai_suggestion",
             name=name,
-            recipe_id=recipe_id,  # ✅ Défini dès la création
+            recipe_id=recipe_id,  # Défini dès la création
         )
         self.db.add(shopping_list)
         self.db.flush()
@@ -98,7 +98,7 @@ class ShoppingService:
         self.db.refresh(shopping_list)
 
         logger.info(
-            f"✅ Generated shopping list {shopping_list.id} '{shopping_list.name}' "
+            f"Generated shopping list {shopping_list.id} '{shopping_list.name}' "
             f"with {len(items_dict)} items, recipe_id={shopping_list.recipe_id}"
         )
 
@@ -117,7 +117,7 @@ class ShoppingService:
         self, fridge_id: int, recipe_ids: List[int], dietary_restrictions: List[str]
     ) -> List[Dict[str, Any]]:
         """
-        ✅ AMÉLIORÉ : Génère les items basés sur les recettes
+        AMÉLIORÉ : Génère les items basés sur les recettes
         Filtre les produits incompatibles avec les restrictions alimentaires
         """
         logger.info(f"Generating items from {len(recipe_ids)} recipes")
@@ -156,14 +156,14 @@ class ShoppingService:
         shopping_items = []
 
         for product_id, required in required_products.items():
-            # ✅ NOUVEAU : Vérifier les restrictions alimentaires
+            # NOUVEAU : Vérifier les restrictions alimentaires
             product = self.db.query(Product).filter(Product.id == product_id).first()
 
             if product and self._product_violates_restrictions(
                 product, dietary_restrictions
             ):
                 logger.info(
-                    f"❌ Skipping product {product.name} "
+                    f"Skipping product {product.name} "
                     f"(violates dietary restrictions: {product.tags})"
                 )
                 continue
@@ -193,7 +193,7 @@ class ShoppingService:
         self, fridge_id: int, user_id: int, dietary_restrictions: List[str]
     ) -> List[Dict[str, Any]]:
         """
-        ✅ NOUVEAU : Suggestions intelligentes avec DIVERSITÉ
+        NOUVEAU : Suggestions intelligentes avec DIVERSITÉ
 
         Privilégie :
         1. Les produits non consommés récemment (30 derniers jours)
@@ -207,7 +207,7 @@ class ShoppingService:
         # Récupérer les produits fréquemment consommés
         consumed_products = self._get_frequently_consumed_products(fridge_id)
 
-        # ✅ NOUVEAU : Récupérer les produits consommés récemment (30 jours)
+        # NOUVEAU : Récupérer les produits consommés récemment (30 jours)
         recently_consumed_ids = self._get_recently_consumed_product_ids(
             fridge_id, days=30
         )
@@ -233,14 +233,14 @@ class ShoppingService:
             if not product:
                 continue
 
-            # ✅ Vérifier restrictions alimentaires
+            # Vérifier restrictions alimentaires
             if self._product_violates_restrictions(product, dietary_restrictions):
                 logger.info(
-                    f"⚠️ Skipping {product.name} (dietary restriction: {product.tags})"
+                    f"Skipping {product.name} (dietary restriction: {product.tags})"
                 )
                 continue
 
-            # ✅ NOUVEAU : Score de diversité
+            # NOUVEAU : Score de diversité
             diversity_score = 1.0
 
             # Pénalité si consommé récemment
@@ -272,14 +272,14 @@ class ShoppingService:
                 }
             )
 
-        # ✅ Trier par score de priorité (produits variés en premier)
+        # Trier par score de priorité (produits variés en premier)
         suggestions.sort(key=lambda x: x.get("priority_score", 0), reverse=True)
 
         # Limiter à 10 suggestions max
         suggestions = suggestions[:10]
 
         logger.info(
-            f"✅ Generated {len(suggestions)} diverse suggestions "
+            f"Generated {len(suggestions)} diverse suggestions "
             f"(prioritizing variety)"
         )
 
@@ -287,7 +287,7 @@ class ShoppingService:
 
     def _get_recently_consumed_product_ids(self, fridge_id: int, days: int = 30) -> set:
         """
-        ✅ NOUVEAU : Récupère les IDs des produits consommés récemment
+        NOUVEAU : Récupère les IDs des produits consommés récemment
 
         Permet d'éviter de suggérer les mêmes produits tout le temps
         """
@@ -391,7 +391,7 @@ class ShoppingService:
         self, fridge_id: int, dietary_restrictions: List[str]
     ) -> List[Dict[str, Any]]:
         """
-        ✅ AMÉLIORÉ : Suggère les produits fréquemment ajoutés
+        AMÉLIORÉ : Suggère les produits fréquemment ajoutés
         Filtre selon les restrictions alimentaires
         """
         from sqlalchemy import Integer, cast, Text
@@ -426,7 +426,7 @@ class ShoppingService:
                 )
 
                 if product:
-                    # ✅ Vérifier restrictions alimentaires
+                    # Vérifier restrictions alimentaires
                     if self._product_violates_restrictions(
                         product, dietary_restrictions
                     ):
@@ -447,7 +447,7 @@ class ShoppingService:
         self, product: Product, dietary_restrictions: List[str]
     ) -> bool:
         """
-        ✅ NOUVEAU : Vérifie si un produit viole les restrictions alimentaires
+        NOUVEAU : Vérifie si un produit viole les restrictions alimentaires
 
         Args:
             product: Le produit à vérifier

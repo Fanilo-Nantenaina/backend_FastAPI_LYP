@@ -79,17 +79,17 @@ async def stream_fridge_events(
         finally:
             db_init.close()
 
-        # ✅ CORRECTION: Tous les champs doivent être des strings valides
+        # CORRECTION: Tous les champs doivent être des strings valides
         yield {
             "event": "connected",
             "id": "0",
             "data": json.dumps(
                 {
-                    "type": "CONNECTED",  # ✅ Ajout du type
+                    "type": "CONNECTED",  # Ajout du type
                     "message": "Connexion SSE établie",
                     "fridge_id": fridge.id,
                     "timestamp": datetime.utcnow().isoformat(),
-                    "payload": {}  # ✅ Ajout du payload vide
+                    "payload": {},  # Ajout du payload vide
                 }
             ),
         }
@@ -112,15 +112,15 @@ async def stream_fridge_events(
                 for event in new_events:
                     last_event_id = event.id
 
-                    # ✅ CORRECTION: S'assurer que payload n'est jamais None
+                    # CORRECTION: S'assurer que payload n'est jamais None
                     payload = event.payload if event.payload is not None else {}
 
-                    # ✅ CORRECTION: S'assurer que le message n'est jamais None
+                    # CORRECTION: S'assurer que le message n'est jamais None
                     message = _generate_event_message(event.type, payload)
                     if message is None:
                         message = "Mise à jour de l'inventaire"
 
-                    # ✅ CORRECTION: S'assurer que le type n'est jamais None
+                    # CORRECTION: S'assurer que le type n'est jamais None
                     event_type = event.type if event.type else "INVENTORY_UPDATED"
 
                     yield {
@@ -132,7 +132,11 @@ async def stream_fridge_events(
                                 "type": event_type,
                                 "message": message,
                                 "payload": payload,
-                                "timestamp": event.created_at.isoformat() if event.created_at else datetime.utcnow().isoformat(),
+                                "timestamp": (
+                                    event.created_at.isoformat()
+                                    if event.created_at
+                                    else datetime.utcnow().isoformat()
+                                ),
                             }
                         ),
                     }
@@ -157,13 +161,12 @@ async def stream_fridge_events(
 
             await asyncio.sleep(3)
 
-
     def _generate_event_message(event_type: str, payload: dict) -> str:
         """Génère un message lisible pour chaque type d'événement"""
-        # ✅ CORRECTION: Gestion des valeurs None
+        # CORRECTION: Gestion des valeurs None
         if payload is None:
             payload = {}
-        
+
         product_name = payload.get("product_name") or "Produit"
         quantity = payload.get("quantity") or ""
         unit = payload.get("unit") or ""

@@ -9,7 +9,7 @@ from app.core.database import Base
 class ShoppingList(Base):
     """
     Modèle ShoppingList - Listes de courses
-    ✅ AMÉLIORÉ : Ajout de la relation avec Recipe
+    AMÉLIORÉ : Ajout de la relation avec Recipe
     """
 
     __tablename__ = "shopping_lists"
@@ -22,24 +22,24 @@ class ShoppingList(Base):
         Integer, ForeignKey("fridges.id", ondelete="CASCADE"), nullable=False
     )
 
-    # ✅ NOUVEAU : Relation optionnelle avec une recette
+    # NOUVEAU : Relation optionnelle avec une recette
     recipe_id = Column(
         Integer, ForeignKey("recipes.id", ondelete="SET NULL"), nullable=True
     )
-    
+
     name = Column(String, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     generated_by = Column(String)  # 'manual', 'auto_recipe', 'ai_suggestion'
 
-    # ✅ NOUVEAU : Statut de la liste
+    # NOUVEAU : Statut de la liste
     status = Column(String, default="active")  # 'active', 'completed', 'cancelled'
     completed_at = Column(DateTime, nullable=True)
 
     # Relations
     user = relationship("User", back_populates="shopping_lists")
     fridge = relationship("Fridge", back_populates="shopping_lists")
-    recipe = relationship("Recipe", back_populates="shopping_lists")  # ✅ NOUVEAU
+    recipe = relationship("Recipe", back_populates="shopping_lists")  # NOUVEAU
     items = relationship(
         "ShoppingListItem", back_populates="shopping_list", cascade="all, delete-orphan"
     )

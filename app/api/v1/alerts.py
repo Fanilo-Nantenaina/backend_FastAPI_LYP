@@ -4,7 +4,7 @@ from typing import List, Optional
 from datetime import datetime
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, get_current_user_optional
 from app.models.user import User
 from app.models.fridge import Fridge
 from app.models.alert import Alert
@@ -17,11 +17,10 @@ router = APIRouter(prefix="/fridges/{fridge_id}/alerts", tags=["Alerts"])
 def get_fridge_access_hybrid(
     fridge_id: int,
     x_kiosk_id: Optional[str] = Header(None, alias="X-Kiosk-ID"),
-    current_user: Optional[User] = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ) -> Fridge:
-    """Auth hybride : kiosk OU user mobile"""
-
+    """HYBRIDE : Accepte soit kiosk_id (pour kiosk), soit JWT (pour mobile)"""
     if x_kiosk_id:
         fridge = (
             db.query(Fridge)
@@ -44,17 +43,13 @@ def get_fridge_access_hybrid(
     elif current_user:
         fridge = (
             db.query(Fridge)
-            .filter(
-                Fridge.id == fridge_id,
-                Fridge.user_id == current_user.id,
-            )
+            .filter(Fridge.id == fridge_id, Fridge.user_id == current_user.id)
             .first()
         )
 
         if not fridge:
             raise HTTPException(
-                status_code=404,
-                detail="Fridge not found or access denied",
+                status_code=404, detail="Fridge not found or access denied"
             )
 
         return fridge
@@ -62,7 +57,7 @@ def get_fridge_access_hybrid(
     else:
         raise HTTPException(
             status_code=401,
-            detail="Authentication required",
+            detail="Authentication required (JWT token or X-Kiosk-ID header)",
         )
 
 

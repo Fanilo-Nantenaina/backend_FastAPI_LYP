@@ -52,17 +52,17 @@ logger = logging.getLogger(__name__)
 
 def decode_token(token: str) -> dict:
     try:
-        logger.info(f"🔑 Decoding token: {token[:20]}...")  # ✅ LOG
+        logger.info(f"🔑 Decoding token: {token[:20]}...")
 
         payload = jwt.decode(
             token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
         )
 
-        logger.info(f"✅ Token decoded successfully: {payload}")  # ✅ LOG
+        logger.info(f"Token decoded successfully: {payload}")
         return payload
 
     except JWTError as e:
-        logger.error(f"❌ JWT decode error: {e}")  # ✅ LOG
+        logger.error(f"JWT decode error: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
@@ -84,19 +84,18 @@ async def get_current_user_id(
     logger.info(f"👤 User ID from payload: {user_id_str} (type: {type(user_id_str)})")
 
     if user_id_str is None:
-        logger.error("❌ No 'sub' in payload")
+        logger.error("No 'sub' in payload")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication credentials - missing 'sub'",
         )
 
-    # ✅ Convertir la string en int
     try:
         user_id = int(user_id_str)
-        logger.info(f"✅ User ID converted to int: {user_id}")
+        logger.info(f"User ID converted to int: {user_id}")
         return user_id
     except (ValueError, TypeError) as e:
-        logger.error(f"❌ Error converting user_id: {e}")
+        logger.error(f"Error converting user_id: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid user ID format: {str(e)}",

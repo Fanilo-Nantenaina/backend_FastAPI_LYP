@@ -33,9 +33,7 @@ def list_products(
 @router.post("", response_model=ProductResponse, status_code=201)
 def create_product(
     request: ProductCreate,
-    current_user: User = Depends(
-        get_current_user
-    ),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Créer un nouveau produit"""
@@ -61,9 +59,7 @@ def get_product(product_id: int, db: Session = Depends(get_db)):
 def update_product(
     product_id: int,
     request: ProductUpdate,
-    current_user: User = Depends(
-        get_current_user
-    ),  # Sécurité : s'assurer que seul un utilisateur autorisé peut mettre à jour
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Modifier un produit"""
@@ -72,7 +68,6 @@ def update_product(
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    # Mise à jour des champs (on n'utilise que les champs définis dans ProductUpdate qui ne sont pas None)
     update_data = request.dict(exclude_unset=True)
     for key, value in update_data.items():
         setattr(product, key, value)
@@ -85,19 +80,15 @@ def update_product(
 @router.delete("/{product_id}", status_code=204)
 def delete_product(
     product_id: int,
-    current_user: User = Depends(
-        get_current_user
-    ),  # Sécurité : s'assurer que seul un utilisateur autorisé peut supprimer
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Supprimer un produit"""
     product = db.query(Product).filter(Product.id == product_id).first()
 
     if not product:
-        # On pourrait retourner 204 même si l'élément n'existe pas,
-        # mais 404 est plus informatif dans un contexte de gestion.
         raise HTTPException(status_code=404, detail="Product not found")
 
     db.delete(product)
     db.commit()
-    return None  # Retourne un statut 204 (No Content)
+    return None 
