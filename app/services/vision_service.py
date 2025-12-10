@@ -2,20 +2,22 @@ import json
 import io
 from PIL import Image
 from datetime import datetime, date, timedelta
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
 from google import genai
 from google.genai import types
 import unicodedata
 import re
+from pydantic import BaseModel
 
 from app.middleware.transaction_handler import transactional
 from app.core.config import settings
 from app.models.product import Product
 from app.models.inventory import InventoryItem
 from app.models.event import Event
-from app.schemas.vision import DetectedProduct
+from app.schemas.vision import DetectedProduct, DetectedProductMatch, ConsumeAnalysisResponse
+from difflib import SequenceMatcher
 
 
 # BASE DE DONNÉES de durées de conservation par défaut
@@ -80,19 +82,19 @@ class VisionService:
         self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
         self.model = settings.GEMINI_MODEL
 
+    @staticmethod
     def normalize_product_name(name: str) -> str:
         """
         Normalise un nom de produit pour la comparaison
         - Supprime les accents
         - Minuscules
         - Supprime les pluriels (s/x)
-        - Supprime les articles (le, la, les, un, une, des)
-        - Supprime les espaces multiples
+        - Supprime les articles
         """
         if not name:
             return ""
 
-        # 1. Minuscules
+        # 1. Minuscules + strip
         name = name.lower().strip()
 
         # 2. Supprimer les accents
@@ -119,37 +121,234 @@ class VisionService:
             if name.startswith(article):
                 name = name[len(article) :]
 
-        # 4. Supprimer les pluriels (s, x à la fin)
+        # 4. Supprimer les pluriels
         words = name.split()
         normalized_words = []
         for word in words:
-            # Enlever 's' ou 'x' final si le mot fait plus de 3 caractères
-            if len(word) > 3 and word[-1] in ["s", "x"]:
-                # Ne pas enlever si c'est un 'ss' (ex: mousse)
-                if not (word[-2:] == "ss"):
-                    word = word[:-1]
+            if len(word) > 3 and word[-1] in ["s", "x"] and not word.endswith("ss"):
+                word = word[:-1]
             normalized_words.append(word)
 
         name = " ".join(normalized_words)
 
-        # 5. Nettoyer les espaces multiples et caractères spéciaux
+        # 5. Nettoyer
         name = re.sub(r"\s+", " ", name).strip()
         name = re.sub(r"[^\w\s-]", "", name)
 
         return name
 
-    def _find_existing_inventory_item(
-        self, fridge_id: int, product_id: int, detected_name: str
-    ) -> Optional[InventoryItem]:
+    @staticmethod
+    def calculate_similarity(str1: str, str2: str) -> float:
         """
-        Recherche intelligente d'un item existant dans l'inventaire
-        Gère les variations de produits similaires
+        Calcule un score de similarité entre deux chaînes (0-100)
+        Utilise SequenceMatcher de difflib
+        """
+        return SequenceMatcher(None, str1, str2).ratio() * 100
+
+    def _find_best_product_match(
+        self, detected_name: str, detected_category: str
+    ) -> Tuple[Optional[Product], float]:
+        """
+        🆕 NOUVELLE MÉTHODE : Trouve le meilleur produit avec score
+
+        Retourne : (Product ou None, score de 0-100)
         """
         import logging
 
         logger = logging.getLogger(__name__)
 
-        # 1. Recherche par product_id exact
+        normalized_search = self.normalize_product_name(detected_name)
+        logger.info(
+            f"🔍 Searching best match for: '{detected_name}' → normalized: '{normalized_search}'"
+        )
+
+        # Récupérer TOUS les produits
+        all_products = self.db.query(Product).all()
+
+        if not all_products:
+            logger.info("  ❌ No products in database")
+            return None, 0.0
+
+        candidates = []  # Liste de (product, score)
+
+        for product in all_products:
+            normalized_db = self.normalize_product_name(product.name)
+            score = 0.0
+
+            # 🎯 SCORING MULTI-CRITÈRES
+
+            # 1️⃣ Match exact normalisé → 100 points
+            if normalized_search == normalized_db:
+                score = 100.0
+                logger.info(f"  ✅ EXACT MATCH: '{product.name}' (score: {score})")
+
+            # 2️⃣ Similarité de chaîne (difflib) → 0-95 points
+            else:
+                similarity = self.calculate_similarity(normalized_search, normalized_db)
+                score = similarity
+
+                # 3️⃣ Bonus : Un mot est contenu dans l'autre → +20 points
+                words_search = set(normalized_search.split())
+                words_db = set(normalized_db.split())
+
+                if words_search.issubset(words_db) or words_db.issubset(words_search):
+                    score += 20
+                    logger.info(
+                        f"  📝 Subset bonus: '{product.name}' ({similarity:.1f}% + 20 = {score:.1f})"
+                    )
+
+                # 4️⃣ Bonus : Même catégorie → +10 points
+                if detected_category.lower() == product.category.lower():
+                    score += 10
+                    logger.info(f"  🏷️ Category bonus: '{product.name}' (same category)")
+
+                # 5️⃣ Bonus : Début identique → +15 points
+                min_len = min(len(normalized_search), len(normalized_db))
+                if min_len >= 4 and normalized_search[:4] == normalized_db[:4]:
+                    score += 15
+                    logger.info(f"  🔤 Prefix bonus: '{product.name}' (same start)")
+
+            # Cap à 100 max
+            score = min(score, 100.0)
+
+            if score >= 50:  # Seuil minimum de pertinence
+                candidates.append((product, score))
+                logger.info(f"Candidate: '{product.name}' (score: {score:.1f})")
+
+        if not candidates:
+            logger.info("No candidates above threshold (50%)")
+            return None, 0.0
+
+        # Trier par score décroissant
+        candidates.sort(key=lambda x: x[1], reverse=True)
+        best_product, best_score = candidates[0]
+
+        logger.info(
+            f"BEST MATCH: '{best_product.name}' (ID: {best_product.id}, score: {best_score:.1f}%)"
+        )
+
+        # Log des autres candidats
+        if len(candidates) > 1:
+            logger.info(f"Other candidates:")
+            for prod, sc in candidates[1:4]:  # Top 3 suivants
+                logger.info(f"     - '{prod.name}': {sc:.1f}%")
+
+        return best_product, best_score
+
+    async def find_best_inventory_match(
+        self,
+        fridge_id: int,
+        detected_name: str,
+        detected_category: str,
+        detected_count: int,
+    ) -> DetectedProductMatch:
+        """
+        Trouve la meilleure correspondance dans l'inventaire
+
+        Stratégie de matching:
+        1. Nom exact (insensible à la casse)
+        2. Similarité de chaîne (SequenceMatcher)
+        3. Catégorie + mots-clés
+        4. Si pas de match → retourne alternatives
+        """
+
+        # Récupérer inventaire actif
+        inventory = (
+            self.db.query(InventoryItem)
+            .filter(InventoryItem.fridge_id == fridge_id, InventoryItem.quantity > 0)
+            .all()
+        )
+
+        if not inventory:
+            return DetectedProductMatch(
+                detected_name=detected_name,
+                detected_count=detected_count,
+                confidence=0.0,
+                possible_matches=[],
+            )
+
+        # Normalisation
+        normalized_detected = self.normalize_product_name(detected_name)
+
+        best_match = None
+        best_score = 0.0
+        alternatives = []
+
+        for item in inventory:
+            product = (
+                self.db.query(Product).filter(Product.id == item.product_id).first()
+            )
+
+            if not product:
+                continue
+
+            normalized_db = self.normalize_product_name(product.name)
+
+            # Score 1: Nom exact
+            if normalized_detected == normalized_db:
+                score = 100.0
+            else:
+                # Score 2: Similarité de chaîne
+                similarity = SequenceMatcher(
+                    None, normalized_detected, normalized_db
+                ).ratio()
+                score = similarity * 100
+
+                # Bonus si même catégorie
+                if detected_category.lower() == product.category.lower():
+                    score += 10
+                    score = min(score, 100)  # Cap à 100
+
+            match_info = {
+                "item_id": item.id,
+                "product_name": product.name,
+                "available_quantity": item.quantity,
+                "unit": item.unit,
+                "score": round(score, 1),
+            }
+
+            if score > best_score:
+                best_score = score
+                best_match = match_info
+
+            # Garder top 3 alternatives (score > 50%)
+            if score >= 50:
+                alternatives.append(match_info)
+
+        # Trier alternatives par score décroissant
+        alternatives.sort(key=lambda x: x["score"], reverse=True)
+        alternatives = alternatives[:3]
+
+        if best_match:
+            return DetectedProductMatch(
+                detected_name=detected_name,
+                detected_count=detected_count,
+                confidence=best_score / 100,
+                matched_item_id=best_match["item_id"],
+                matched_product_name=best_match["product_name"],
+                available_quantity=best_match["available_quantity"],
+                match_score=best_score,
+                possible_matches=alternatives[1:],  # Exclure le best match
+            )
+        else:
+            return DetectedProductMatch(
+                detected_name=detected_name,
+                detected_count=detected_count,
+                confidence=0.0,
+                possible_matches=alternatives,
+            )
+
+    def _find_existing_inventory_item(
+        self, fridge_id: int, product_id: int, detected_name: str
+    ) -> Optional[InventoryItem]:
+        """
+        🔄 SIMPLIFIÉ : Recherche par product_id uniquement
+        (Le matching est déjà fait dans _find_or_create_product)
+        """
+        import logging
+
+        logger = logging.getLogger(__name__)
+
         existing = (
             self.db.query(InventoryItem)
             .filter(
@@ -161,35 +360,11 @@ class VisionService:
         )
 
         if existing:
-            logger.info(f"  📦 Found existing item by product_id: {product_id}")
-            return existing
+            logger.info(f"  📦 Found existing inventory item (ID: {existing.id})")
+        else:
+            logger.info(f"  📦 No existing inventory item")
 
-        # 2. Recherche par nom similaire (pour les cas où le product_id diffère légèrement)
-        normalized_search = normalize_product_name(detected_name)
-
-        all_items = (
-            self.db.query(InventoryItem)
-            .filter(
-                InventoryItem.fridge_id == fridge_id,
-                InventoryItem.quantity > 0,
-            )
-            .all()
-        )
-
-        for item in all_items:
-            product = (
-                self.db.query(Product).filter(Product.id == item.product_id).first()
-            )
-            if product:
-                normalized_db = normalize_product_name(product.name)
-                if normalized_db == normalized_search:
-                    logger.info(
-                        f"  📦 Found existing item by normalized name: '{product.name}'"
-                    )
-                    return item
-
-        logger.info(f"  📦 No existing item found")
-        return None
+        return existing
 
     @transactional
     async def analyze_and_update_inventory(
@@ -272,12 +447,14 @@ class VisionService:
         }
 
         system_instruction = (
+            "Vous devez TOUJOURS répondre en FRANÇAIS, jamais en anglais.\n"
             "Vous êtes un assistant expert en inventaire de cuisine. Analysez l'image fournie et :\n"
             "1. Détectez TOUS les produits alimentaires visibles\n"
             "2. Comptez avec précision (ex: 6 œufs, 3 tomates)\n"
             "3. Lisez les textes sur les emballages (OCR) - nom du produit\n"
             "4. Cherchez les DATES DE PÉREMPTION sur les emballages (format DD/MM/YYYY ou similaire)\n"
             "5. Si pas de date visible, estimez la durée de conservation en jours\n"
+            "IMPORTANT : Répondez UNIQUEMENT en français, avec des noms de produits en français.\n"
             "Répondez en JSON structuré."
         )
 
@@ -506,92 +683,57 @@ class VisionService:
 
     def _find_or_create_product(self, detected: DetectedProduct) -> Product:
         """
-        Trouve ou crée un produit avec recherche intelligente
-        Gère les variations de noms (pluriel, accents, etc.)
+        🔄 REFONTE COMPLÈTE : Utilise le nouveau système de scoring
+
+        Seuil de matching : 70%
+        - >= 70% : Utilise le produit existant
+        - < 70% : Crée un nouveau produit
         """
         import logging
 
         logger = logging.getLogger(__name__)
 
         detected_name = detected.product_name.strip()
-        normalized_search = normalize_product_name(detected_name)
+        logger.info(f"\n{'='*60}")
+        logger.info(f"🔍 PRODUCT MATCHING: '{detected_name}'")
+        logger.info(f"{'='*60}")
 
-        logger.info(
-            f"Searching product: '{detected_name}' (normalized: '{normalized_search}')"
+        # 🎯 Recherche avec scoring
+        best_product, best_score = self._find_best_product_match(
+            detected_name, detected.category
         )
 
-        # ÉTAPE 1: Recherche exacte (cas idéal)
-        product = (
-            self.db.query(Product).filter(Product.name.ilike(detected_name)).first()
-        )
+        # 📊 DÉCISION basée sur le score
+        MATCH_THRESHOLD = 70.0  # Seuil configurable
 
-        if product:
-            logger.info(f"  Found exact match: '{product.name}' (ID: {product.id})")
-            return product
-
-        # ÉTAPE 2: Recherche par nom normalisé
-        all_products = self.db.query(Product).all()
-
-        for prod in all_products:
-            normalized_db = normalize_product_name(prod.name)
-
-            # Comparaison stricte des noms normalisés
-            if normalized_db == normalized_search:
-                logger.info(f"  Found normalized match: '{prod.name}' (ID: {prod.id})")
-                return prod
-
-            # Comparaison partielle (contient)
-            if normalized_search in normalized_db or normalized_db in normalized_search:
-                # Vérifier que c'est assez similaire (au moins 70% du nom)
-                similarity = (
-                    len(normalized_search) / len(normalized_db)
-                    if len(normalized_db) > 0
-                    else 0
-                )
-                if similarity > 0.7 or len(normalized_search) > 0.7 * len(
-                    normalized_db
-                ):
-                    logger.info(
-                        f"  Found partial match: '{prod.name}' (ID: {prod.id}, similarity: {similarity:.2%})"
-                    )
-                    return prod
-
-        # ÉTAPE 3: Recherche par catégorie + mots-clés
-        category_lower = detected.category.lower()
-        words = normalized_search.split()
-
-        if len(words) >= 2:  # Si au moins 2 mots (ex: "poivron vert")
-            category_products = (
-                self.db.query(Product)
-                .filter(Product.category.ilike(f"%{category_lower}%"))
-                .all()
+        if best_product and best_score >= MATCH_THRESHOLD:
+            logger.info(
+                f"✅ USING EXISTING: '{best_product.name}' (score: {best_score:.1f}% >= {MATCH_THRESHOLD}%)"
             )
+            return best_product
 
-            for prod in category_products:
-                normalized_db = normalize_product_name(prod.name)
-                # Vérifier si tous les mots-clés sont présents
-                if all(word in normalized_db for word in words):
-                    logger.info(
-                        f"  Found category+keyword match: '{prod.name}' (ID: {prod.id})"
-                    )
-                    return prod
-
-        # ÉTAPE 4: Aucune correspondance, créer nouveau produit
-        logger.info(f"  No match found, creating new product: '{detected_name}'")
+        # ❌ Pas de match suffisant → Créer nouveau produit
+        logger.info(f"🆕 CREATING NEW PRODUCT: '{detected_name}'")
+        if best_product:
+            logger.info(
+                f"   (best match was '{best_product.name}' with {best_score:.1f}%, below threshold)"
+            )
 
         shelf_life = self._estimate_shelf_life(detected_name, detected.category)
 
-        product = Product(
-            name=detected_name.capitalize(),  # Première lettre majuscule
+        new_product = Product(
+            name=detected_name.capitalize(),
             category=detected.category,
             shelf_life_days=shelf_life,
             default_unit="pièce",
         )
-        self.db.add(product)
+        self.db.add(new_product)
         self.db.flush()
 
-        logger.info(f"  Created product: '{product.name}' (ID: {product.id})")
-        return product
+        logger.info(f"✅ Created: '{new_product.name}' (ID: {new_product.id})")
+        logger.info(f"{'='*60}\n")
+
+        return new_product
 
     def _parse_expiry_date(self, date_text: str) -> Optional[date]:
         """Parse une date de péremption depuis le texte OCR"""

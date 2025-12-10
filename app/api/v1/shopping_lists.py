@@ -631,7 +631,7 @@ async def suggest_diverse_products(
         ", ".join(dietary_restrictions) if dietary_restrictions else "Aucune"
     )
 
-    prompt = f"""Tu es un assistant culinaire intelligent. Analyse l'inventaire actuel et suggère 8-12 produits VARIÉS et INTÉRESSANTS à acheter.
+    prompt = f"""Tu es un assistant culinaire intelligent. Tu dois TOUJOURS répondre en FRANÇAIS, jamais en anglais. Analyse l'inventaire actuel et suggère 8-12 produits VARIÉS et INTÉRESSANTS à acheter.
 
 INVENTAIRE ACTUEL :
 {json.dumps(current_products, ensure_ascii=False, indent=2)}
@@ -691,7 +691,7 @@ Réponds en JSON avec cette structure :
         }
 
         config = types.GenerateContentConfig(
-            system_instruction="Tu es un expert en nutrition et diversité alimentaire. Réponds uniquement en JSON.",
+            system_instruction="Tu es un expert en nutrition et diversité alimentaire. Tu dois TOUJOURS répondre en FRANÇAIS, jamais en anglais. Réponds uniquement en JSON.",
             response_mime_type="application/json",
             response_schema=output_schema,
         )

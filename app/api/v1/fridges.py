@@ -8,6 +8,8 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models.user import User
 from app.services.fridge_service import FridgeService
+from app.models.fridge import Fridge
+
 from app.schemas.fridge import (
     KioskInitResponse,
     PairingRequest,
@@ -16,14 +18,10 @@ from app.schemas.fridge import (
     FridgeResponse,
     FridgeUpdate,
     UpdateFridgeInfoRequest,
+    KioskInitRequest,
 )
 
 router = APIRouter(prefix="/fridges", tags=["Fridges"])
-
-
-class KioskInitRequest(BaseModel):
-    device_id: Optional[str] = None
-    device_name: Optional[str] = None
 
 
 @router.post("/kiosk/init", response_model=KioskInitResponse)

@@ -9,12 +9,13 @@ from app.core.security import (
     decode_token,
 )
 from app.models.user import User
-from app.schemas.auth import LoginRequest, TokenResponse, RegisterRequest
+from app.schemas.auth import (
+    LoginRequest,
+    TokenResponse,
+    RegisterRequest,
+    RefreshRequest,
+)
 from pydantic import BaseModel
-
-
-class RefreshRequest(BaseModel):
-    refresh_token: str
 
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])

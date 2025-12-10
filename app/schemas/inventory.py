@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, field_validator, model_validator
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime, date
 
 
@@ -100,3 +100,52 @@ class InventoryItemResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ConsumeBatchItem(BaseModel):
+    """Item à consommer dans un batch"""
+
+    inventory_item_id: int
+    quantity_consumed: float
+    detected_product_name: str  # Pour traçabilité
+
+
+class ConsumeBatchRequest(BaseModel):
+    """Consommation multiple en une seule requête"""
+
+    items: List[ConsumeBatchItem]
+
+
+class ConsumeBatchResponse(BaseModel):
+    """Résultat de la consommation batch"""
+
+    success_count: int
+    failed_count: int
+    results: List[Dict[str, Any]]
+
+
+class SearchRequest(BaseModel):
+    """Requête de recherche vocale/textuelle"""
+
+    query: str
+
+
+class SearchHistoryResponse(BaseModel):
+    """Réponse historique d'une recherche"""
+
+    id: str
+    query: str
+    response: str
+    timestamp: str
+
+    class Config:
+        from_attributes = True
+
+
+class SearchResponse(BaseModel):
+    """Réponse d'une recherche avec IA"""
+
+    query: str
+    response: str
+    timestamp: str
+    inventory_count: int

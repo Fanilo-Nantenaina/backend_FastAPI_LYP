@@ -5,7 +5,15 @@ from app.core.database import get_db
 from app.core.dependencies import get_user_fridge
 from app.models.fridge import Fridge
 from app.services.vision_service import VisionService
-from app.schemas.vision import VisionAnalysisResponse, ManualEntryRequest
+from app.schemas.vision import (
+    VisionAnalysisResponse,
+    ManualEntryRequest,
+    DetectedProductMatch,
+    ConsumeAnalysisResponse,
+)
+from pydantic import BaseModel
+from typing import List, Dict, Any
+from datetime import datetime
 
 router = APIRouter(prefix="/fridges/{fridge_id}/vision", tags=["Vision AI"])
 
@@ -109,3 +117,64 @@ async def manual_expiry_entry(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Manual update failed: {str(e)}")
+
+
+@router.post("/analyze-consume", response_model=ConsumeAnalysisResponse)
+async def analyze_for_consumption(
+    fridge_id: int,
+    file: UploadFile = File(...),
+    x_kiosk_id: Optional[str] = Header(None, alias="X-Kiosk-ID"),
+    db: Session = Depends(get_db),
+):
+    """
+    🆕 NOUVEAU : Analyse d'image pour SORTIE de produits
+
+    Flow:
+    1. Détecte produits via Gemini (comme /analyze)
+    2. Pour chaque produit détecté → cherche correspondance dans inventaire
+    3. Retourne liste avec matching automatique + alternatives
+    4. Frontend confirme → route PATCH /consume-batch fait la soustraction
+    """
+
+    if not x_kiosk_id:
+        raise HTTPException(status_code=401, detail="X-Kiosk-ID required")
+
+    fridge = (
+        db.query(Fridge)
+        .filter(
+            Fridge.id == fridge_id,
+            Fridge.kiosk_id == x_kiosk_id,
+            Fridge.is_paired == True,
+        )
+        .first()
+    )
+
+    if not fridge:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    vision_service = VisionService(db)
+
+    detected_products = await vision_service._analyze_image_with_gemini(file)
+
+    matched_results = []
+    requires_review = False
+
+    for detected in detected_products:
+        match_result = await vision_service.find_best_inventory_match(
+            fridge_id=fridge_id,
+            detected_name=detected.product_name,
+            detected_category=detected.category,
+            detected_count=detected.count,
+        )
+
+        matched_results.append(match_result)
+
+        if match_result.match_score is None or match_result.match_score < 80:
+            requires_review = True
+
+    return ConsumeAnalysisResponse(
+        timestamp=datetime.utcnow().isoformat(),
+        detected_count=len(detected_products),
+        detected_products=matched_results,
+        requires_manual_review=requires_review,
+    )

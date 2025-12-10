@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, date, timedelta
+from pydantic import BaseModel
+from typing import Dict, Any
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user_optional
@@ -16,6 +18,9 @@ from app.schemas.inventory import (
     InventoryItemCreate,
     InventoryItemUpdate,
     ConsumeItemRequest,
+    ConsumeBatchItem,
+    ConsumeBatchRequest,
+    ConsumeBatchResponse,
 )
 import logging
 
@@ -449,3 +454,111 @@ def remove_inventory_item(
     db.delete(item)
     db.commit()
     return None
+
+
+@router.patch("/consume-batch")
+def consume_items_batch(
+    fridge_id: int,
+    request: ConsumeBatchRequest,
+    fridge: Fridge = Depends(get_fridge_access_hybrid),
+    db: Session = Depends(get_db),
+):
+    """
+    🆕 NOUVEAU : Consomme plusieurs items en une seule requête
+
+    Utilisé après validation manuelle de l'analyse en mode SORTIE
+    """
+
+    results = []
+    success_count = 0
+    failed_count = 0
+
+    for item_req in request.items:
+        try:
+            # Récupérer l'item
+            item = (
+                db.query(InventoryItem)
+                .filter(
+                    InventoryItem.id == item_req.inventory_item_id,
+                    InventoryItem.fridge_id == fridge.id,
+                )
+                .first()
+            )
+
+            if not item:
+                results.append(
+                    {
+                        "item_id": item_req.inventory_item_id,
+                        "status": "not_found",
+                        "error": "Item not found",
+                    }
+                )
+                failed_count += 1
+                continue
+
+            # Vérifier quantité disponible
+            if item.quantity < item_req.quantity_consumed:
+                results.append(
+                    {
+                        "item_id": item_req.inventory_item_id,
+                        "status": "insufficient_quantity",
+                        "error": f"Only {item.quantity} {item.unit} available",
+                        "requested": item_req.quantity_consumed,
+                    }
+                )
+                failed_count += 1
+                continue
+
+            # Consommer (logique existante)
+            old_quantity = item.quantity
+            item.quantity -= item_req.quantity_consumed
+
+            # Marquer comme ouvert si consommation partielle
+            if item.quantity > 0 and not item.open_date:
+                item.open_date = date.today()
+
+            # Événement
+            product = db.query(Product).filter(Product.id == item.product_id).first()
+
+            event = Event(
+                fridge_id=fridge.id,
+                inventory_item_id=item.id,
+                type="ITEM_CONSUMED",
+                payload={
+                    "source": "vision_consume",
+                    "product_name": product.name if product else "Unknown",
+                    "detected_as": item_req.detected_product_name,
+                    "quantity_consumed": item_req.quantity_consumed,
+                    "unit": item.unit,
+                    "remaining": item.quantity,
+                    "old_quantity": old_quantity,
+                },
+            )
+            db.add(event)
+
+            results.append(
+                {
+                    "item_id": item.id,
+                    "status": "success",
+                    "product_name": product.name if product else "Unknown",
+                    "consumed": item_req.quantity_consumed,
+                    "remaining": item.quantity,
+                }
+            )
+            success_count += 1
+
+        except Exception as e:
+            results.append(
+                {
+                    "item_id": item_req.inventory_item_id,
+                    "status": "error",
+                    "error": str(e),
+                }
+            )
+            failed_count += 1
+
+    db.commit()
+
+    return ConsumeBatchResponse(
+        success_count=success_count, failed_count=failed_count, results=results
+    )

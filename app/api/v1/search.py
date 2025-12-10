@@ -11,6 +11,11 @@ from app.core.dependencies import get_current_user
 from app.models.user import User
 from app.models.fridge import Fridge
 from app.models.inventory import InventoryItem
+from app.schemas.inventory import (
+    SearchRequest,
+    SearchResponse,
+    SearchHistoryResponse,
+)
 from app.models.product import Product
 from app.core.config import settings
 
@@ -20,33 +25,6 @@ from google.genai import types
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/fridges/{fridge_id}/search", tags=["Search"])
-
-
-class SearchRequest(BaseModel):
-    """Requête de recherche vocale/textuelle"""
-
-    query: str
-
-
-class SearchHistoryResponse(BaseModel):
-    """Réponse historique d'une recherche"""
-
-    id: str
-    query: str
-    response: str
-    timestamp: str
-
-    class Config:
-        from_attributes = True
-
-
-class SearchResponse(BaseModel):
-    """Réponse d'une recherche avec IA"""
-
-    query: str
-    response: str
-    timestamp: str
-    inventory_count: int
 
 
 @router.post("", response_model=SearchResponse)
@@ -116,25 +94,28 @@ async def search_inventory_with_ai(
                 }
             )
 
-    prompt = f"""Tu es l'assistant vocal d'un réfrigérateur intelligent. Réponds en français de manière naturelle et concise.
+    prompt = f"""Tu es l'assistant vocal d'un réfrigérateur intelligent. 
+        Tu dois TOUJOURS répondre en FRANÇAIS, jamais en anglais.
+        Réponds en français de manière naturelle et concise.
 
-INVENTAIRE ACTUEL DU FRIGO:
-{json.dumps(inventory_context, ensure_ascii=False, indent=2)}
+        INVENTAIRE ACTUEL DU FRIGO:
+        {json.dumps(inventory_context, ensure_ascii=False, indent=2)}
 
-QUESTION DE L'UTILISATEUR:
-"{request.query}"
+        QUESTION DE L'UTILISATEUR:
+        "{request.query}"
 
-INSTRUCTIONS IMPORTANTES:
-1. Réponds de manière conversationnelle et naturelle (comme si tu parlais à quelqu'un)
-2. Sois précis sur les quantités et unités
-3. Si un produit expire dans moins de 3 jours, MENTIONNE-LE explicitement
-4. Si le produit n'existe pas, suggère des alternatives présentes dans le frigo
-5. Pour les questions de recettes, suggère des idées UNIQUEMENT basées sur l'inventaire disponible
-6. Limite ta réponse à 2-3 phrases maximum
-7. Ne mentionne PAS les jours d'expiration si > 7 jours (sauf si demandé explicitement)
-8. Utilise un ton amical et utile
+        INSTRUCTIONS IMPORTANTES:
+        1. Réponds de manière conversationnelle et naturelle en FRANÇAIS
+        2. Sois précis sur les quantités et unités
+        3. Si un produit expire dans moins de 3 jours, MENTIONNE-LE explicitement
+        4. Si le produit n'existe pas, suggère des alternatives présentes dans le frigo
+        5. Pour les questions de recettes, suggère des idées UNIQUEMENT basées sur l'inventaire disponible
+        6. Limite ta réponse à 2-3 phrases maximum
+        7. Ne mentionne PAS les jours d'expiration si > 7 jours (sauf si demandé explicitement)
+        8. Utilise un ton amical et utile
+        9. TOUJOURS en français, jamais en anglais
 
-RÉPONDS UNIQUEMENT LA RÉPONSE, PAS DE PRÉAMBULE NI D'INTRODUCTION."""
+        RÉPONDS UNIQUEMENT LA RÉPONSE EN FRANÇAIS, PAS DE PRÉAMBULE NI D'INTRODUCTION."""
 
     try:
         client = genai.Client(api_key=settings.GEMINI_API_KEY)

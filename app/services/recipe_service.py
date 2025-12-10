@@ -455,7 +455,7 @@ class RecipeService:
         )
 
         # PROMPT AMÉLIORÉ avec restrictions alimentaires
-        prompt = f"""Tu es un chef cuisinier créatif et INCLUSIF. Suggère UNE recette originale et délicieuse basée sur les ingrédients disponibles.
+        prompt = f"""Tu es un chef cuisinier créatif et INCLUSIF. Tu dois TOUJOURS répondre en FRANÇAIS, jamais en anglais. Suggère UNE recette originale et délicieuse basée sur les ingrédients disponibles.
 
     INGRÉDIENTS DISPONIBLES DANS LE FRIGO:
     {ingredients_text}
@@ -479,12 +479,17 @@ class RecipeService:
     7. La difficulté doit être "easy", "medium" ou "hard"
     8. Sois créatif et propose quelque chose d'intéressant!
     9. RESPECTE ABSOLUMENT les restrictions alimentaires de l'utilisateur
-
     Réponds UNIQUEMENT en JSON structuré."""
 
         try:
             config = types.GenerateContentConfig(
-                system_instruction="Tu es un chef cuisinier expert qui suggère des recettes créatives EN RESPECTANT STRICTEMENT les restrictions alimentaires. Réponds uniquement en JSON.",
+                system_instruction=(
+                    "Tu es un chef cuisinier expert qui suggère des recettes créatives "
+                    "EN RESPECTANT STRICTEMENT les restrictions alimentaires. "
+                    "Tu dois TOUJOURS répondre en FRANÇAIS, jamais en anglais. "
+                    "Tous les noms d'ingrédients, étapes et descriptions doivent être en français. "
+                    "Réponds uniquement en JSON."
+                ),
                 response_mime_type="application/json",
                 response_schema=output_schema,
             )
