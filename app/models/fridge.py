@@ -68,6 +68,18 @@ class Fridge(Base):
     shopping_lists = relationship(
         "ShoppingList", back_populates="fridge", cascade="all, delete-orphan"
     )
+    
+    recipes = relationship(
+        "Recipe", 
+        back_populates="fridge", 
+        cascade="all, delete-orphan"
+    )
+    
+    favorite_recipes = relationship(
+        "RecipeFavorite",
+        back_populates="fridge",
+        cascade="all, delete-orphan"
+    )
 
     def __repr__(self):
         status = "PAIRED" if self.is_paired else "UNPAIRED"

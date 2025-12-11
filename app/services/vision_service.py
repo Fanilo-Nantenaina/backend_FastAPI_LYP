@@ -16,7 +16,11 @@ from app.core.config import settings
 from app.models.product import Product
 from app.models.inventory import InventoryItem
 from app.models.event import Event
-from app.schemas.vision import DetectedProduct, DetectedProductMatch, ConsumeAnalysisResponse
+from app.schemas.vision import (
+    DetectedProduct,
+    DetectedProductMatch,
+    ConsumeAnalysisResponse,
+)
 from difflib import SequenceMatcher
 
 
@@ -180,7 +184,7 @@ class VisionService:
             # 1️⃣ Match exact normalisé → 100 points
             if normalized_search == normalized_db:
                 score = 100.0
-                logger.info(f"  ✅ EXACT MATCH: '{product.name}' (score: {score})")
+                logger.info(f"  EXACT MATCH: '{product.name}' (score: {score})")
 
             # 2️⃣ Similarité de chaîne (difflib) → 0-95 points
             else:
@@ -708,7 +712,7 @@ class VisionService:
 
         if best_product and best_score >= MATCH_THRESHOLD:
             logger.info(
-                f"✅ USING EXISTING: '{best_product.name}' (score: {best_score:.1f}% >= {MATCH_THRESHOLD}%)"
+                f"USING EXISTING: '{best_product.name}' (score: {best_score:.1f}% >= {MATCH_THRESHOLD}%)"
             )
             return best_product
 
@@ -730,7 +734,7 @@ class VisionService:
         self.db.add(new_product)
         self.db.flush()
 
-        logger.info(f"✅ Created: '{new_product.name}' (ID: {new_product.id})")
+        logger.info(f"Created: '{new_product.name}' (ID: {new_product.id})")
         logger.info(f"{'='*60}\n")
 
         return new_product

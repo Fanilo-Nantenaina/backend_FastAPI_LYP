@@ -12,10 +12,12 @@ class RecipeCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = Field(None, max_length=1000)
     steps: Optional[str] = Field(None, max_length=5000)
-    preparation_time: Optional[int] = Field(None, ge=0, le=1440)  # Max 24h
+    preparation_time: Optional[int] = Field(None, ge=0, le=1440)
     difficulty: Optional[str] = Field(None, pattern="^(easy|medium|hard)$")
     extra_data: Optional[Dict[str, Any]] = None
     ingredients: List[RecipeIngredientCreate] = Field(..., min_length=1)
+
+    fridge_id: Optional[int] = None
 
     @validator("title")
     def validate_title(cls, v):
@@ -25,11 +27,14 @@ class RecipeCreate(BaseModel):
 
     @validator("ingredients")
     def validate_ingredients(cls, v):
-        """Vérifier qu'il n'y a pas de doublons"""
         product_ids = [ing.product_id for ing in v]
         if len(product_ids) != len(set(product_ids)):
             raise ValueError("La recette contient des ingrédients en double")
         return v
+
+
+class AddToFavoritesRequest(BaseModel):
+    fridge_id: int = Field(..., gt=0, description="ID du frigo associé")
 
 
 class RecipeIngredientResponse(BaseModel):
@@ -51,6 +56,7 @@ class RecipeResponse(BaseModel):
     preparation_time: Optional[int]
     difficulty: Optional[str]
     extra_data: Optional[Dict[str, Any]]
+    fridge_id: Optional[int] = None  # AJOUT
     ingredients: List[RecipeIngredientResponse] = []
 
     class Config:
@@ -64,7 +70,6 @@ class FeasibleRecipeResponse(BaseModel):
     can_make: bool
     missing_ingredients: List[Dict[str, Any]]
     match_percentage: float
-    # AJOUTER ces champs
     shopping_list_id: Optional[int] = None
     shopping_list_status: Optional[str] = None
     ingredients_complete: bool = False
@@ -74,6 +79,7 @@ class FeasibleRecipeResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
 
 class SuggestedIngredient(BaseModel):
     """Ingrédient suggéré par l'IA"""
@@ -104,6 +110,7 @@ class SuggestedRecipeResponse(BaseModel):
     available_ingredients: List[str]
     missing_ingredients: List[Dict[str, Any]]
     match_percentage: float
+    fridge_id: Optional[int] = None
 
     class Config:
         json_schema_extra = {
@@ -117,20 +124,8 @@ class SuggestedRecipeResponse(BaseModel):
                         "unit": "pièces",
                         "is_available": True,
                     },
-                    {
-                        "name": "Tomates",
-                        "quantity": 2,
-                        "unit": "pièces",
-                        "is_available": True,
-                    },
-                    {
-                        "name": "Oignon",
-                        "quantity": 1,
-                        "unit": "pièce",
-                        "is_available": False,
-                    },
                 ],
-                "steps": "1. Battre les œufs...\n2. Couper les légumes...",
+                "steps": "1. Battre les œufs...",
                 "preparation_time": 15,
                 "difficulty": "easy",
                 "available_ingredients": ["Œufs", "Tomates"],
@@ -138,5 +133,6 @@ class SuggestedRecipeResponse(BaseModel):
                     {"name": "Oignon", "quantity": 1, "unit": "pièce"}
                 ],
                 "match_percentage": 66.7,
+                "fridge_id": 1,
             }
         }

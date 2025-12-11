@@ -9,12 +9,14 @@ from app.models.user import User
 from app.models.fridge import Fridge
 from app.models.recipe import Recipe, RecipeFavorite, RecipeIngredient
 from app.models.product import Product
+from sqlalchemy import or_
 
 from app.schemas.recipe import (
     RecipeResponse,
     RecipeCreate,
     FeasibleRecipeResponse,
     SuggestedRecipeResponse,
+    AddToFavoritesRequest,  # NOUVEAU
 )
 from app.services.recipe_service import RecipeService
 
@@ -25,6 +27,7 @@ logger = logging.getLogger(__name__)
 @router.get("", response_model=List[RecipeResponse])
 def list_recipes(
     db: Session = Depends(get_db),
+    fridge_id: int = Query(None, description="Filtrer par frigo"),  # AJOUT
     difficulty: str = None,
     cuisine: str = None,
     limit: int = 50,
@@ -33,10 +36,14 @@ def list_recipes(
 ):
     """Liste toutes les recettes disponibles
 
-    âš ï¸ Le tri par 'match' n'est disponible QUE pour les recettes rÃ©alisables
-    (route /recipes/fridges/{fridge_id}/feasible)
+    MODIFIÉ : Peut filtrer par fridge_id pour ne montrer que :
+    - Les recettes globales (fridge_id = NULL)
+    - Les recettes créées pour ce frigo spécifique
     """
     query = db.query(Recipe)
+
+    if fridge_id is not None:
+        query = query.filter(Recipe.fridge_id == fridge_id)
 
     if difficulty:
         query = query.filter(Recipe.difficulty == difficulty)
@@ -67,7 +74,10 @@ def create_recipe(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Créer une nouvelle recette"""
+    """Créer une nouvelle recette
+
+    MODIFIÉ : Supporte maintenant fridge_id optionnel
+    """
     recipe_service = RecipeService(db)
     recipe = recipe_service.create_recipe(request)
     return recipe
@@ -85,26 +95,40 @@ def get_recipe(recipe_id: int, db: Session = Depends(get_db)):
 @router.post("/{recipe_id}/favorite", status_code=201)
 def add_to_favorites(
     recipe_id: int,
+    request: AddToFavoritesRequest,  # MODIFIÉ : Maintenant prend fridge_id
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """CU6: Marquer une recette comme favorite (RG16)"""
+    """CU6: Marquer une recette comme favorite (RG16)
+
+    MODIFIÉ : Nécessite maintenant un fridge_id
+    Les favoris sont par frigo, pas globaux
+    """
     recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
 
+    # MODIFIÉ : Vérifier si déjà favori POUR CE FRIGO
     existing = (
         db.query(RecipeFavorite)
         .filter(
             RecipeFavorite.user_id == current_user.id,
             RecipeFavorite.recipe_id == recipe_id,
+            RecipeFavorite.fridge_id == request.fridge_id,  # AJOUT
         )
         .first()
     )
     if existing:
-        raise HTTPException(status_code=400, detail="Recipe already in favorites")
+        raise HTTPException(
+            status_code=400, detail="Recipe already in favorites for this fridge"
+        )
 
-    favorite = RecipeFavorite(user_id=current_user.id, recipe_id=recipe_id)
+    # MODIFIÉ : Créer avec fridge_id
+    favorite = RecipeFavorite(
+        user_id=current_user.id,
+        recipe_id=recipe_id,
+        fridge_id=request.fridge_id,  # AJOUT
+    )
     db.add(favorite)
     db.commit()
     return {"message": "Recipe added to favorites"}
@@ -113,15 +137,20 @@ def add_to_favorites(
 @router.delete("/{recipe_id}/favorite", status_code=204)
 def remove_from_favorites(
     recipe_id: int,
+    fridge_id: int = Query(..., description="ID du frigo"),  # AJOUT
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Retirer une recette des favoris"""
+    """Retirer une recette des favoris
+
+    MODIFIÉ : Nécessite maintenant un fridge_id en query param
+    """
     favorite = (
         db.query(RecipeFavorite)
         .filter(
             RecipeFavorite.user_id == current_user.id,
             RecipeFavorite.recipe_id == recipe_id,
+            RecipeFavorite.fridge_id == fridge_id,  # AJOUT
         )
         .first()
     )
@@ -135,14 +164,21 @@ def remove_from_favorites(
 
 @router.get("/favorites/mine", response_model=List[RecipeResponse])
 def list_my_favorites(
+    fridge_id: int = Query(..., description="ID du frigo"),  # MODIFIÉ : Obligatoire
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """CU6: Consulter les recettes favorites"""
+    """CU6: Consulter les recettes favorites
+
+    MODIFIÉ : Filtre par fridge_id (obligatoire)
+    """
     favorites = (
         db.query(Recipe)
         .join(RecipeFavorite)
-        .filter(RecipeFavorite.user_id == current_user.id)
+        .filter(
+            RecipeFavorite.user_id == current_user.id,
+            RecipeFavorite.fridge_id == fridge_id,  # AJOUT
+        )
         .all()
     )
     return favorites
@@ -158,11 +194,11 @@ def list_feasible_recipes(
     sort_by: str = Query("match", regex="^(match|name|date|time)$"),
     order: str = Query("desc", regex="^(asc|desc)$"),
 ):
-    """
-    CU6: Consulter les recettes faisables avec l'inventaire actuel
-    AJOUT : Options de tri
-    - sort_by: match (défaut), name, date, time
-    - order: desc (défaut), asc
+    """CU6: Consulter les recettes faisables avec l'inventaire actuel
+
+    MODIFIÉ : Ne retourne que les recettes :
+    - Globales (fridge_id = NULL)
+    - Créées pour ce frigo spécifique
     """
     from app.models.fridge import Fridge
 
@@ -191,16 +227,9 @@ async def suggest_recipe_with_ai(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    NOUVELLE ROUTE: Suggestion IA de recette basée sur l'inventaire
+    """NOUVELLE ROUTE: Suggestion IA de recette basée sur l'inventaire
 
-    Utilise Gemini pour suggérer une recette créative basée sur:
-    - Les produits disponibles dans le frigo
-    - Les préférences alimentaires de l'utilisateur
-    - Les restrictions alimentaires
-
-    Returns:
-        SuggestedRecipeResponse avec la recette générée par l'IA
+    La recette suggérée sera liée à ce frigo
     """
     from app.models.fridge import Fridge
 
@@ -219,7 +248,10 @@ async def suggest_recipe_with_ai(
             fridge_id=fridge_id,
             user=current_user,
         )
-        return suggested_recipe
+        # AJOUT : Inclure fridge_id dans la réponse
+        suggested_recipe_dict = suggested_recipe.dict()
+        suggested_recipe_dict["fridge_id"] = fridge_id
+        return suggested_recipe_dict
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -233,11 +265,9 @@ async def save_suggested_recipe(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Sauvegarde une recette suggérée par l'IA dans la base de données
+    """Sauvegarde une recette suggérée par l'IA dans la base de données
 
-    Permet de transformer une suggestion temporaire en recette permanente
-    accessible à tous les utilisateurs.
+    MODIFIÉ : Sauvegarde avec fridge_id
     """
     try:
         recipe = Recipe(
@@ -246,6 +276,7 @@ async def save_suggested_recipe(
             steps=suggestion.steps,
             preparation_time=suggestion.preparation_time,
             difficulty=suggestion.difficulty,
+            fridge_id=suggestion.fridge_id,  # AJOUT
             extra_data={
                 "created_from": "ai_suggestion",
                 "created_by_user_id": current_user.id,
@@ -283,7 +314,10 @@ async def save_suggested_recipe(
         db.commit()
         db.refresh(recipe)
 
-        logger.info(f"Saved AI-suggested recipe: {recipe.id} - {recipe.title}")
+        logger.info(
+            f"Saved AI-suggested recipe: {recipe.id} - {recipe.title} "
+            f"(fridge_id: {recipe.fridge_id})"
+        )
 
         return recipe
 
@@ -293,63 +327,3 @@ async def save_suggested_recipe(
         raise HTTPException(
             status_code=500, detail=f"Erreur lors de la sauvegarde: {str(e)}"
         )
-
-
-@router.get("/debug/shopping-lists-recipes")
-def debug_shopping_lists_recipes(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """
-    DEBUG : Voir les liens entre recettes et listes de courses
-    """
-    from app.models.shopping_list import ShoppingList
-    from app.models.recipe import Recipe
-
-    shopping_lists = (
-        db.query(ShoppingList).filter(ShoppingList.user_id == current_user.id).all()
-    )
-
-    recipes = db.query(Recipe).all()
-
-    lists_info = []
-    for sl in shopping_lists:
-        items_count = len(sl.items)
-        purchased_count = sum(1 for item in sl.items if item.status == "purchased")
-
-        lists_info.append(
-            {
-                "id": sl.id,
-                "fridge_id": sl.fridge_id,
-                "recipe_id": sl.recipe_id,
-                "recipe_name": sl.recipe.title if sl.recipe else None,
-                "generated_by": sl.generated_by,
-                "status": sl.status,
-                "items_count": items_count,
-                "purchased_count": purchased_count,
-                "is_completed": purchased_count == items_count and items_count > 0,
-                "created_at": sl.created_at.isoformat() if sl.created_at else None,
-            }
-        )
-
-    recipes_info = [
-        {
-            "id": r.id,
-            "title": r.title,
-            "has_shopping_list": any(sl["recipe_id"] == r.id for sl in lists_info),
-        }
-        for r in recipes[:20]
-    ]
-
-    return {
-        "user_id": current_user.id,
-        "shopping_lists": lists_info,
-        "recipes_sample": recipes_info,
-        "total_recipes": len(recipes),
-        "lists_with_recipe_id": sum(
-            1 for sl in lists_info if sl["recipe_id"] is not None
-        ),
-        "lists_without_recipe_id": sum(
-            1 for sl in lists_info if sl["recipe_id"] is None
-        ),
-    }

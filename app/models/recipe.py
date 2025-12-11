@@ -18,25 +18,25 @@ class Recipe(Base):
     extra_data = Column(JSON, default=dict)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    # Relations
+    fridge_id = Column(
+        Integer, ForeignKey("fridges.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+
+    fridge = relationship("Fridge", back_populates="recipes")
     ingredients = relationship(
         "RecipeIngredient", back_populates="recipe", cascade="all, delete-orphan"
     )
     favorites = relationship(
         "RecipeFavorite", back_populates="recipe", cascade="all, delete-orphan"
     )
-
     shopping_lists = relationship("ShoppingList", back_populates="recipe")
 
     def __repr__(self):
-        return f"<Recipe(id={self.id}, title={self.title})>"
+        return f"<Recipe(id={self.id}, title={self.title}, fridge_id={self.fridge_id})>"
 
 
 class RecipeIngredient(Base):
-    """
-    Modèle RecipeIngredient - Ingrédients d'une recette
-    Table de liaison entre Recipe et Product
-    """
+    """Modèle RecipeIngredient - Ingrédients d'une recette"""
 
     __tablename__ = "recipe_ingredients"
 
@@ -51,7 +51,6 @@ class RecipeIngredient(Base):
     quantity = Column(Float)
     unit = Column(String)
 
-    # Relations
     recipe = relationship("Recipe", back_populates="ingredients")
     product = relationship("Product", back_populates="recipe_ingredients")
 
@@ -60,9 +59,10 @@ class RecipeIngredient(Base):
 
 
 class RecipeFavorite(Base):
-    """
-    Modèle RecipeFavorite - Recettes favorites des utilisateurs
-    RG16: Un utilisateur ne peut pas ajouter deux fois la même recette
+    """Modèle RecipeFavorite - Recettes favorites des utilisateurs
+
+    MODIFIÉ : Ajout de fridge_id pour avoir des favoris par frigo
+    RG16: Un utilisateur ne peut pas ajouter deux fois la même recette (par frigo)
     """
 
     __tablename__ = "recipe_favorites"
@@ -75,11 +75,18 @@ class RecipeFavorite(Base):
         Integer, ForeignKey("recipes.id", ondelete="CASCADE"), nullable=False
     )
 
+    fridge_id = Column(
+        Integer,
+        ForeignKey("fridges.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    # Relations
     user = relationship("User", back_populates="favorite_recipes")
     recipe = relationship("Recipe", back_populates="favorites")
+    fridge = relationship("Fridge", back_populates="favorite_recipes")
 
     def __repr__(self):
-        return f"<RecipeFavorite(user_id={self.user_id}, recipe_id={self.recipe_id})>"
+        return f"<RecipeFavorite(user_id={self.user_id}, recipe_id={self.recipe_id}, fridge_id={self.fridge_id})>"

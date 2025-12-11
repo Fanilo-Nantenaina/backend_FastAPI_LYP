@@ -18,6 +18,7 @@ from app.core.config import settings
 
 from google import genai
 from google.genai import types
+from sqlalchemy import or_, and_, func
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,8 @@ class RecipeService:
         """
         from app.models.shopping_list import ShoppingList, ShoppingListItem
 
-        all_recipes = self.db.query(Recipe).all()
+        all_recipes = self.db.query(Recipe).filter(Recipe.fridge_id == fridge_id).all()
+
         inventory = (
             self.db.query(InventoryItem)
             .filter(InventoryItem.fridge_id == fridge_id, InventoryItem.quantity > 0)
