@@ -207,43 +207,68 @@ ALERTES EN ATTENTE :
 
         body += f"""
 
-{'=' * 50}
+            {'=' * 50}
 
-Consultez votre application pour plus de détails.
+            Consultez votre application pour plus de détails.
 
-Bonne journée !
-L'équipe Smart Fridge
+            Bonne journée !
+            L'équipe Smart Fridge
         """
 
         return self.send_email_notification(
             user_email=user.email, subject=subject, body=body
         )
 
+    def _sanitize_fcm_data(self, data: Optional[Dict[str, Any]]) -> Dict[str, str]:
+        """
+        ✅ Convertit toutes les valeurs en strings pour FCM
+
+        FCM n'accepte que des strings dans le champ 'data'.
+        Convertit : int → str, bool → "true"/"false", None → ""
+        """
+        if not data:
+            return {}
+
+        safe_data = {}
+        for key, value in data.items():
+            if value is None:
+                safe_data[key] = ""
+            elif isinstance(value, bool):
+                safe_data[key] = "true" if value else "false"
+            else:
+                safe_data[key] = str(value)
+
+        return safe_data
+
     def send_push_notification(
         self, user_id: int, title: str, body: str, data: Optional[Dict[str, Any]] = None
     ) -> bool:
         """
         Envoie une notification push via Firebase Cloud Messaging (FCM)
+        VERSION MODERNE avec firebase-admin SDK
 
-        REFACTORISÉ : Utilise maintenant Fridge.kiosk_metadata pour stocker les FCM tokens
+        Args:
+            user_id: ID de l'utilisateur
+            title: Titre de la notification
+            body: Corps du message
+            data: Données supplémentaires (seront converties en strings)
 
-        Configuration nécessaire dans .env :
-        - FCM_SERVER_KEY=your-fcm-server-key
-
-        Les FCM tokens des appareils mobiles doivent être stockés dans
-        Fridge.kiosk_metadata["fcm_tokens"] = ["token1", "token2", ...]
-
-        Note: Un utilisateur peut avoir plusieurs frigos, chacun avec son token FCM
+        Returns:
+            True si au moins une notification a été envoyée avec succès
         """
         try:
-            import requests
+            import firebase_admin
+            from firebase_admin import credentials, messaging
 
-            fcm_server_key = getattr(settings, "FCM_SERVER_KEY", None)
-            if not fcm_server_key:
-                logger.warning("FCM server key not configured")
-                return False
+            # ✅ Initialiser Firebase Admin SDK (une seule fois)
+            if not firebase_admin._apps:
+                cred = credentials.Certificate(
+                    "smart-fridge-357b0-firebase-adminsdk-fbsvc-e5dbd0f2cb.json"
+                )
+                firebase_admin.initialize_app(cred)
+                logger.info("✅ Firebase Admin SDK initialized")
 
-            # CHANGEMENT : Récupérer les tokens FCM depuis les frigos de l'utilisateur
+            # Récupérer les tokens FCM depuis les frigos de l'utilisateur
             fridges = (
                 self.db.query(Fridge)
                 .filter(Fridge.user_id == user_id, Fridge.is_paired == True)
@@ -254,24 +279,16 @@ L'équipe Smart Fridge
                 logger.info(f"No paired fridges found for user {user_id}")
                 return False
 
-            notification_payload = {
-                "title": title,
-                "body": body,
-                "sound": "default",
-                "badge": "1",
-            }
+            # ✅ Sanitizer les données (convertir en strings)
+            safe_data = self._sanitize_fcm_data(data)
 
             success_count = 0
 
-            # CHANGEMENT : Parcourir les frigos au lieu des devices
+            # Parcourir les frigos pour envoyer aux tokens FCM
             for fridge in fridges:
-                # Récupérer les tokens FCM stockés dans kiosk_metadata
                 fcm_tokens = []
 
                 if fridge.kiosk_metadata:
-                    # Le token peut être stocké de plusieurs façons :
-                    # 1. Comme une liste : {"fcm_tokens": ["token1", "token2"]}
-                    # 2. Comme un token unique : {"fcm_token": "token"}
                     if "fcm_tokens" in fridge.kiosk_metadata:
                         fcm_tokens = fridge.kiosk_metadata["fcm_tokens"]
                     elif "fcm_token" in fridge.kiosk_metadata:
@@ -281,36 +298,62 @@ L'équipe Smart Fridge
                     if not fcm_token:
                         continue
 
-                    payload = {
-                        "to": fcm_token,
-                        "notification": notification_payload,
-                        "data": data or {},
-                        "priority": "high",
-                    }
-
-                    headers = {
-                        "Authorization": f"key={fcm_server_key}",
-                        "Content-Type": "application/json",
-                    }
-
-                    response = requests.post(
-                        "https://fcm.googleapis.com/fcm/send",
-                        json=payload,
-                        headers=headers,
+                    # ✅ Créer le message Firebase
+                    message = messaging.Message(
+                        notification=messaging.Notification(
+                            title=title,
+                            body=body,
+                        ),
+                        data=safe_data,  # ✅ Toutes les valeurs sont des strings
+                        token=fcm_token,
+                        android=messaging.AndroidConfig(
+                            priority="high",
+                            notification=messaging.AndroidNotification(
+                                sound="default",
+                                channel_id="smart_fridge_alerts",
+                                color="#3B82F6",  # Couleur bleue
+                            ),
+                        ),
+                        apns=messaging.APNSConfig(
+                            payload=messaging.APNSPayload(
+                                aps=messaging.Aps(
+                                    sound="default",
+                                    badge=1,
+                                    content_available=True,
+                                ),
+                            ),
+                        ),
                     )
 
-                    if response.status_code == 200:
+                    # ✅ Envoyer via Firebase Admin SDK
+                    try:
+                        response = messaging.send(message)
                         success_count += 1
-                        logger.info(f"Push notification sent to fridge {fridge.id}")
-                    else:
+                        logger.info(
+                            f"✅ Push notification sent to fridge {fridge.id}: {response}"
+                        )
+                    except messaging.UnregisteredError:
+                        logger.warning(
+                            f"⚠️ Token invalid/expired for fridge {fridge.id}, "
+                            f"removing from database"
+                        )
+                        # Supprimer le token invalide
+                        if "fcm_tokens" in fridge.kiosk_metadata:
+                            fridge.kiosk_metadata["fcm_tokens"].remove(fcm_token)
+                            from sqlalchemy.orm.attributes import flag_modified
+
+                            flag_modified(fridge, "kiosk_metadata")
+                            self.db.commit()
+
+                    except Exception as e:
                         logger.error(
-                            f"Failed to send push to fridge {fridge.id}: {response.text}"
+                            f"❌ Failed to send push to fridge {fridge.id}: {e}"
                         )
 
             return success_count > 0
 
         except Exception as e:
-            logger.error(f"Failed to send push notification: {e}")
+            logger.error(f"❌ Failed to send push notification: {e}", exc_info=True)
             return False
 
     def send_alert_push(self, alert: Alert, user_id: int) -> bool:
@@ -537,4 +580,72 @@ L'équipe Smart Fridge
         except Exception as e:
             logger.error(f"Failed to unregister FCM token: {e}")
             self.db.rollback()
+            return False
+
+    def send_inventory_notification(
+        self,
+        fridge_id: int,
+        action: str,
+        product_name: str,
+        quantity: float = None,
+        unit: str = None,
+        source: str = "manual",
+    ) -> bool:
+        """
+        📦 NOUVEAU : Envoie une notification pour une action d'inventaire
+
+        Args:
+            fridge_id: ID du frigo
+            action: "added", "updated", "consumed", "removed"
+            product_name: Nom du produit
+            quantity: Quantité (optionnel)
+            unit: Unité (optionnel)
+            source: "manual", "vision", "scan"
+
+        Returns:
+            True si envoyé avec succès
+        """
+        try:
+            # Récupérer le frigo et l'utilisateur
+            fridge = self.db.query(Fridge).filter(Fridge.id == fridge_id).first()
+            if not fridge or not fridge.user_id:
+                logger.warning(f"Fridge {fridge_id} not found or no user")
+                return False
+
+            # Construire le titre et le message
+            title_map = {
+                "added": "📦 Produit ajouté",
+                "updated": "✏️ Produit modifié",
+                "consumed": "🍽️ Produit consommé",
+                "removed": "🗑️ Produit retiré",
+            }
+
+            title = title_map.get(action, "📦 Inventaire mis à jour")
+
+            # Message détaillé
+            if quantity and unit:
+                body = f"{product_name} : {quantity} {unit}"
+            else:
+                body = product_name
+
+            # Ajouter la source si c'est un scan
+            if source == "vision":
+                body += " (scan IA)"
+
+            # Envoyer la notification push
+            return self.send_push_notification(
+                user_id=fridge.user_id,
+                title=title,
+                body=body,
+                data={
+                    "action": action,
+                    "product_name": product_name,
+                    "fridge_id": fridge_id,
+                    "source": source,
+                    "type": "inventory_update",
+                },
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to send inventory notification: {e}")
             return False

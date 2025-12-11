@@ -40,3 +40,5 @@ pytest-asyncio
 httpx
 
 sse-starlette
+
+firebase-admin

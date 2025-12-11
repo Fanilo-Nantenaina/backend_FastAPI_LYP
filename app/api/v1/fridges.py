@@ -8,6 +8,7 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models.user import User
 from app.services.fridge_service import FridgeService
+from app.services.notification_service import NotificationService
 from app.models.fridge import Fridge
 
 from app.schemas.fridge import (
@@ -258,3 +259,18 @@ def get_fridge_summary(
 
     summary = service.get_fridge_summary(fridge_id)
     return summary
+
+
+@router.post("/{fridge_id}/register-fcm-token")
+async def register_fcm_token(
+    fridge_id: int,
+    request: dict,  # {"fcm_token": "xxx"}
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Enregistre le token FCM pour les push notifications"""
+    notification_service = NotificationService(db)
+    success = notification_service.register_fcm_token(
+        fridge_id=fridge_id, fcm_token=request["fcm_token"], user_id=current_user.id
+    )
+    return {"registered": success}

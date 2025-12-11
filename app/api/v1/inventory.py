@@ -13,6 +13,8 @@ from app.models.inventory import InventoryItem
 from app.models.product import Product
 from app.models.alert import Alert
 from app.models.event import Event
+from app.services.notification_service import NotificationService
+
 from app.schemas.inventory import (
     InventoryItemResponse,
     InventoryItemCreate,
@@ -212,6 +214,20 @@ def add_inventory_item(
         )
         .first()
     )
+    
+    try:
+        notification_service = NotificationService(db)
+        notification_service.send_inventory_notification(
+            fridge_id=fridge.id,
+            action="added",
+            product_name=product.name,
+            quantity=request.quantity,
+            unit=item.unit if "item" in locals() else request.unit,
+            source="manual",
+        )
+        logger.info(f"📲 Notification sent for product addition: {product.name}")
+    except Exception as e:
+        logger.error(f"❌ Failed to send notification: {e}")
 
     if existing_item:
         logger.info(
