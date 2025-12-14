@@ -127,7 +127,7 @@ async def analyze_for_consumption(
     db: Session = Depends(get_db),
 ):
     """
-    🆕 NOUVEAU : Analyse d'image pour SORTIE de produits
+    NOUVEAU : Analyse d'image pour SORTIE de produits
 
     Flow:
     1. Détecte produits via Gemini (comme /analyze)

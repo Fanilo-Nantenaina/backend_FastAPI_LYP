@@ -183,7 +183,7 @@ L'équipe Smart Fridge
             .count()
         )
 
-        subject = f"📊 Résumé quotidien - {fridge.name}"
+        subject = f"Résumé quotidien - {fridge.name}"
 
         body = f"""
 Bonjour {user.name or 'cher utilisateur'},
@@ -221,7 +221,7 @@ ALERTES EN ATTENTE :
 
     def _sanitize_fcm_data(self, data: Optional[Dict[str, Any]]) -> Dict[str, str]:
         """
-        ✅ Convertit toutes les valeurs en strings pour FCM
+        Convertit toutes les valeurs en strings pour FCM
 
         FCM n'accepte que des strings dans le champ 'data'.
         Convertit : int → str, bool → "true"/"false", None → ""
@@ -260,13 +260,13 @@ ALERTES EN ATTENTE :
             import firebase_admin
             from firebase_admin import credentials, messaging
 
-            # ✅ Initialiser Firebase Admin SDK (une seule fois)
+            # Initialiser Firebase Admin SDK (une seule fois)
             if not firebase_admin._apps:
                 cred = credentials.Certificate(
                     "smart-fridge-357b0-firebase-adminsdk-fbsvc-e5dbd0f2cb.json"
                 )
                 firebase_admin.initialize_app(cred)
-                logger.info("✅ Firebase Admin SDK initialized")
+                logger.info("Firebase Admin SDK initialized")
 
             # Récupérer les tokens FCM depuis les frigos de l'utilisateur
             fridges = (
@@ -279,7 +279,7 @@ ALERTES EN ATTENTE :
                 logger.info(f"No paired fridges found for user {user_id}")
                 return False
 
-            # ✅ Sanitizer les données (convertir en strings)
+            # Sanitizer les données (convertir en strings)
             safe_data = self._sanitize_fcm_data(data)
 
             success_count = 0
@@ -298,13 +298,13 @@ ALERTES EN ATTENTE :
                     if not fcm_token:
                         continue
 
-                    # ✅ Créer le message Firebase
+                    # Créer le message Firebase
                     message = messaging.Message(
                         notification=messaging.Notification(
                             title=title,
                             body=body,
                         ),
-                        data=safe_data,  # ✅ Toutes les valeurs sont des strings
+                        data=safe_data,  # Toutes les valeurs sont des strings
                         token=fcm_token,
                         android=messaging.AndroidConfig(
                             priority="high",
@@ -325,16 +325,16 @@ ALERTES EN ATTENTE :
                         ),
                     )
 
-                    # ✅ Envoyer via Firebase Admin SDK
+                    # Envoyer via Firebase Admin SDK
                     try:
                         response = messaging.send(message)
                         success_count += 1
                         logger.info(
-                            f"✅ Push notification sent to fridge {fridge.id}: {response}"
+                            f"Push notification sent to fridge {fridge.id}: {response}"
                         )
                     except messaging.UnregisteredError:
                         logger.warning(
-                            f"⚠️ Token invalid/expired for fridge {fridge.id}, "
+                            f"Token invalid/expired for fridge {fridge.id}, "
                             f"removing from database"
                         )
                         # Supprimer le token invalide
@@ -346,14 +346,12 @@ ALERTES EN ATTENTE :
                             self.db.commit()
 
                     except Exception as e:
-                        logger.error(
-                            f"❌ Failed to send push to fridge {fridge.id}: {e}"
-                        )
+                        logger.error(f"Failed to send push to fridge {fridge.id}: {e}")
 
             return success_count > 0
 
         except Exception as e:
-            logger.error(f"❌ Failed to send push notification: {e}", exc_info=True)
+            logger.error(f"Failed to send push notification: {e}", exc_info=True)
             return False
 
     def send_alert_push(self, alert: Alert, user_id: int) -> bool:
@@ -649,3 +647,221 @@ L'équipe Smart Fridge
         except Exception as e:
             logger.error(f"Failed to send inventory notification: {e}")
             return False
+
+    def send_smart_inventory_notification(
+        self,
+        fridge_id: int,
+        action: str,
+        product_name: str,
+        quantity: float = None,
+        remaining_quantity: float = None,
+        unit: str = None,
+        freshness_status: str = "unknown",
+        expiry_date=None,
+        source: str = "manual",
+    ) -> bool:
+        """
+        Notifications intelligentes et contextuelles
+
+        Génère des messages humains et engageants selon le contexte
+        """
+        from datetime import date
+
+        # Récupérer le frigo et l'utilisateur
+        fridge = self.db.query(Fridge).filter(Fridge.id == fridge_id).first()
+        if not fridge or not fridge.user_id:
+            logger.warning(f"Fridge {fridge_id} not found or no user")
+            return False
+
+        # GÉNÉRATION CONTEXTUELLE DU MESSAGE
+        title, body, emoji = self._generate_smart_message(
+            action=action,
+            product_name=product_name,
+            quantity=quantity,
+            remaining_quantity=remaining_quantity,
+            unit=unit,
+            freshness_status=freshness_status,
+            expiry_date=expiry_date,
+            source=source,
+        )
+
+        # Envoyer la notification push
+        return self.send_push_notification(
+            user_id=fridge.user_id,
+            title=title,
+            body=body,
+            data={
+                "action": action,
+                "product_name": product_name,
+                "fridge_id": fridge_id,
+                "source": source,
+                "type": "inventory_update",
+                "freshness_status": freshness_status,
+            },
+        )
+
+    def _generate_smart_message(
+        self,
+        action: str,
+        product_name: str,
+        quantity: float = None,
+        remaining_quantity: float = None,
+        unit: str = None,
+        freshness_status: str = "unknown",
+        expiry_date=None,
+        source: str = "manual",
+    ) -> tuple:
+        """
+        🧠 INTELLIGENCE ARTIFICIELLE CONTEXTUELLE
+
+        Génère des messages humains selon le contexte complet
+
+        Returns:
+            (title, body, emoji)
+        """
+        from datetime import date
+
+        # ==========================================
+        # 🍽️ ACTION : CONSOMMATION
+        # ==========================================
+        if action == "consumed":
+
+            # 🚨 CAS 1 : Produit EXPIRÉ consommé (bizarre !)
+            if freshness_status == "expired":
+                title = "Attention à la fraîcheur"
+                body = f"Vous avez consommé {product_name} qui était périmé. Assurez-vous qu'il était encore bon !"
+                if remaining_quantity and remaining_quantity > 0:
+                    body += f" Il en reste {remaining_quantity} {unit}, pensez à les jeter pour votre sécurité."
+                return (title, body, "⚠️")
+
+            # 🟠 CAS 2 : Produit qui expire AUJOURD'HUI
+            elif freshness_status == "expires_today":
+                title = "👍 Parfait timing !"
+                body = f"Vous avez consommé {product_name} pile avant expiration. "
+                if remaining_quantity and remaining_quantity > 0:
+                    body += f"Attention, il en reste {remaining_quantity} {unit} qui expirent aujourd'hui !"
+                else:
+                    body += "Plus aucun gaspillage, bravo ! 🎉"
+                return (title, body, "👍")
+
+            # 🟡 CAS 3 : Produit qui expire BIENTÔT
+            elif freshness_status == "expiring_soon":
+                title = "⏰ Bonne initiative !"
+                body = f"{product_name} consommé avant péremption. "
+
+                if expiry_date:
+                    from datetime import date as dt
+
+                    try:
+                        if isinstance(expiry_date, str):
+                            exp_date = dt.fromisoformat(expiry_date)
+                        else:
+                            exp_date = expiry_date
+                        days_left = (exp_date - dt.today()).days
+
+                        if remaining_quantity and remaining_quantity > 0:
+                            body += f"Il reste {remaining_quantity} {unit} (expire dans {days_left} jour{'s' if days_left > 1 else ''}). Pensez à tout finir ! 🍽️"
+                        else:
+                            body += "Plus de gaspillage possible ! ✨"
+                    except:
+                        pass
+
+                return (title, body, "⏰")
+
+            # CAS 4 : Produit FRAIS (normal)
+            else:
+                title = "🍽️ Bon appétit !"
+
+                if source == "vision":
+                    body = f"{product_name} détecté automatiquement et retiré de l'inventaire"
+                else:
+                    body = f"{product_name} retiré de votre inventaire"
+
+                if quantity and unit:
+                    body += f" ({quantity} {unit})"
+
+                if remaining_quantity and remaining_quantity > 0:
+                    body += f". Il en reste {remaining_quantity} {unit}."
+                else:
+                    body += ". Stock épuisé !"
+
+                return (title, body, "🍽️")
+
+        # ==========================================
+        # ➕ ACTION : AJOUT
+        # ==========================================
+        elif action == "added":
+            title = "📦 Nouveau produit !"
+
+            if source == "vision":
+                body = f"{product_name} détecté automatiquement par scan IA"
+            else:
+                body = f"{product_name} ajouté à votre frigo"
+
+            if quantity and unit:
+                body += f" ({quantity} {unit})"
+
+            # Ajouter info sur fraîcheur si pertinent
+            if freshness_status == "expiring_soon" and expiry_date:
+                from datetime import date as dt
+
+                try:
+                    if isinstance(expiry_date, str):
+                        exp_date = dt.fromisoformat(expiry_date)
+                    else:
+                        exp_date = expiry_date
+                    days_left = (exp_date - dt.today()).days
+                    body += f". Expire dans {days_left} jour{'s' if days_left > 1 else ''}, à consommer rapidement !"
+                except:
+                    pass
+
+            return (title, body, "📦")
+
+        # ==========================================
+        # ✏️ ACTION : MODIFICATION
+        # ==========================================
+        elif action == "updated":
+            title = "✏️ Produit mis à jour"
+            body = f"{product_name} modifié"
+
+            if quantity and unit:
+                body += f" ({quantity} {unit})"
+
+            return (title, body, "✏️")
+
+        # ==========================================
+        # 🗑️ ACTION : SUPPRESSION
+        # ==========================================
+        elif action == "removed":
+
+            # Cas spécial : suppression d'un produit périmé
+            if freshness_status == "expired":
+                title = "🗑️ Bon réflexe !"
+                body = f"{product_name} périmé retiré du frigo. Merci de garder un frigo sain !"
+                return (title, body, "🗑️")
+
+            # Cas spécial : suppression d'un produit qui expire bientôt
+            elif freshness_status == "expiring_soon":
+                title = "Produit retiré"
+                body = f"{product_name} retiré alors qu'il expire bientôt. Pensez à le consommer si possible !"
+                return (title, body, "⚠️")
+
+            # Cas normal
+            else:
+                title = "🗑️ Produit retiré"
+                body = f"{product_name} supprimé de l'inventaire"
+
+                if quantity and unit:
+                    body += f" ({quantity} {unit})"
+
+                return (title, body, "🗑️")
+
+        # ==========================================
+        # FALLBACK (cas non géré)
+        # ==========================================
+        else:
+            title = f"📱 Mise à jour : {product_name}"
+            body = f"Action : {action}"
+            if quantity and unit:
+                body += f" ({quantity} {unit})"
+            return (title, body, "📱")

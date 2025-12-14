@@ -177,7 +177,7 @@ class RecipeService:
                             )
 
                         logger.info(
-                            f"📊 Recipe '{recipe.title}': frigo={match_percentage}%, "
+                            f"Recipe '{recipe.title}': frigo={match_percentage}%, "
                             f"achetés={purchased_missing_count}/{total_missing_count}, "
                             f"combiné={combined_percentage}%"
                         )

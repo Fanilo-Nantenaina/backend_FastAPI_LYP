@@ -247,7 +247,7 @@ class ShoppingService:
             if product_id in recently_consumed_ids:
                 diversity_score *= 0.3  # Réduire fortement la priorité
                 logger.info(
-                    f"📊 {product.name} : recently consumed, "
+                    f"{product.name} : recently consumed, "
                     f"diversity score = {diversity_score}"
                 )
             else:
@@ -317,7 +317,7 @@ class ShoppingService:
                     consumed_product_ids.add(item.product_id)
 
         logger.info(
-            f"📊 Found {len(consumed_product_ids)} products "
+            f"Found {len(consumed_product_ids)} products "
             f"consumed in last {days} days"
         )
 

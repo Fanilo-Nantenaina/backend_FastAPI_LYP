@@ -50,7 +50,7 @@ class FridgeService:
             )
 
             if existing_fridge:
-                logger.info(f"🔄 Restoring kiosk from device_id: {device_id}")
+                logger.info(f"Restoring kiosk from device_id: {device_id}")
 
                 existing_fridge.last_heartbeat = datetime.utcnow()
 
@@ -237,11 +237,7 @@ class FridgeService:
 
         ATTENTION : Supprime également l'inventaire !
         """
-        fridge = (
-            self.db.query(Fridge)
-            .filter(Fridge.id == fridge_id, Fridge.user_id == user_id)
-            .first()
-        )
+        fridge = self.db.query(Fridge).filter(Fridge.id == fridge_id).first()
 
         if not fridge:
             return False

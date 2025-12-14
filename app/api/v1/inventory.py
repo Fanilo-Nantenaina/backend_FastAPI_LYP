@@ -217,17 +217,33 @@ def add_inventory_item(
 
     try:
         notification_service = NotificationService(db)
-        notification_service.send_inventory_notification(
+
+        # Calculer le statut de fraîcheur
+        freshness_status = "fresh"
+        if expiry_date:
+            from datetime import date
+
+            days_until_expiry = (expiry_date - date.today()).days
+            if days_until_expiry < 0:
+                freshness_status = "expired"
+            elif days_until_expiry == 0:
+                freshness_status = "expires_today"
+            elif days_until_expiry <= 3:
+                freshness_status = "expiring_soon"
+
+        notification_service.send_smart_inventory_notification(
             fridge_id=fridge.id,
             action="added",
             product_name=product.name,
             quantity=request.quantity,
             unit=item.unit if "item" in locals() else request.unit,
+            freshness_status=freshness_status,
+            expiry_date=expiry_date,
             source="manual",
         )
-        logger.info(f"📲 Notification sent for product addition: {product.name}")
+        logger.info(f"Smart notification sent for product addition")
     except Exception as e:
-        logger.error(f"❌ Failed to send notification: {e}")
+        logger.error(f"Failed to send notification: {e}")
 
     if existing_item:
         logger.info(
@@ -375,7 +391,20 @@ def update_inventory_item(
 
     try:
         notification_service = NotificationService(db)
-        notification_service.send_inventory_notification(
+
+        freshness_status = "fresh"
+        if item.expiry_date:
+            from datetime import date
+
+            days_until_expiry = (item.expiry_date - date.today()).days
+            if days_until_expiry < 0:
+                freshness_status = "expired"
+            elif days_until_expiry == 0:
+                freshness_status = "expires_today"
+            elif days_until_expiry <= 3:
+                freshness_status = "expiring_soon"
+
+        notification_service.send_smart_inventory_notification(
             fridge_id=fridge.id,
             action="updated",
             product_name=product.name if product else f"Produit #{item.product_id}",
@@ -383,13 +412,12 @@ def update_inventory_item(
                 request.quantity if request.quantity is not None else item.quantity
             ),
             unit=item.unit,
+            freshness_status=freshness_status,
+            expiry_date=item.expiry_date,
             source="manual",
         )
-        logger.info(
-            f"📲 Notification sent for product update: {product.name if product else item.product_id}"
-        )
     except Exception as e:
-        logger.error(f"❌ Failed to send notification: {e}")
+        logger.error(f"Failed to send notification: {e}")
 
     if request.expiry_date is not None:
         from app.services.alert_service import AlertService
@@ -421,7 +449,7 @@ def consume_item(
     fridge: Fridge = Depends(get_fridge_access_hybrid),
     db: Session = Depends(get_db),
 ):
-    """Déclarer la Consommation"""
+    """Déclarer la Consommation + Gestion des alertes"""
     item = (
         db.query(InventoryItem)
         .filter(InventoryItem.id == item_id, InventoryItem.fridge_id == fridge.id)
@@ -437,11 +465,56 @@ def consume_item(
             detail=f"Cannot consume more than available ({item.quantity} {item.unit})",
         )
 
+    freshness_status = "unknown"
+    if item.expiry_date:
+        from datetime import date
+
+        today = date.today()
+        days_until_expiry = (item.expiry_date - today).days
+
+        if days_until_expiry < 0:
+            freshness_status = "expired"
+        elif days_until_expiry == 0:
+            freshness_status = "expires_today"
+        elif days_until_expiry <= 3:
+            freshness_status = "expiring_soon"
+        else:
+            freshness_status = "fresh"
+
+    old_quantity = item.quantity
     if new_quantity > 0 and not item.open_date:
         item.open_date = date.today()
 
     item.quantity = new_quantity
     product = db.query(Product).filter(Product.id == item.product_id).first()
+
+    from app.services.alert_service import AlertService
+
+    alert_service = AlertService(db)
+
+    if new_quantity == 0:
+        db.query(Alert).filter(
+            Alert.inventory_item_id == item_id, Alert.status == "pending"
+        ).update({"status": "resolved", "resolved_at": datetime.utcnow()})
+
+        logger.info(f"Resolved all alerts for consumed item {item_id}")
+
+    else:
+        db.query(Alert).filter(
+            Alert.inventory_item_id == item_id,
+            Alert.type == "LOW_STOCK",
+            Alert.status == "pending",
+        ).delete()
+
+        config = fridge.config or {}
+        low_stock_threshold = config.get("low_stock_threshold", 2.0)
+
+        if product.extra_data and "min_quantity" in product.extra_data:
+            min_qty = product.extra_data["min_quantity"]
+            if new_quantity <= min_qty:
+                alert_service._check_low_stock_alert(
+                    item, fridge.id, low_stock_threshold
+                )
 
     event = Event(
         fridge_id=fridge.id,
@@ -452,6 +525,8 @@ def consume_item(
             "quantity_consumed": request.quantity_consumed,
             "unit": item.unit,
             "remaining": new_quantity,
+            "old_quantity": old_quantity,
+            "freshness_status": freshness_status,
         },
     )
     db.add(event)
@@ -460,19 +535,19 @@ def consume_item(
 
     try:
         notification_service = NotificationService(db)
-        notification_service.send_inventory_notification(
+        notification_service.send_smart_inventory_notification(
             fridge_id=fridge.id,
             action="consumed",
             product_name=product.name if product else f"Produit #{item.product_id}",
             quantity=request.quantity_consumed,
+            remaining_quantity=new_quantity,
             unit=item.unit,
-            source="manual",
+            freshness_status=freshness_status,
+            expiry_date=item.expiry_date,
         )
-        logger.info(
-            f"📲 Notification sent for product consumption: {product.name if product else item.product_id}"
-        )
+        logger.info(f"Smart notification sent for consumption")
     except Exception as e:
-        logger.error(f"❌ Failed to send notification: {e}")
+        logger.error(f"Failed to send notification: {e}")
 
     return _enrich_inventory_response(item, db)
 
@@ -483,7 +558,8 @@ def remove_inventory_item(
     fridge: Fridge = Depends(get_fridge_access_hybrid),
     db: Session = Depends(get_db),
 ):
-    """Supprimer un item"""
+    """Supprimer un item + notification smart + résolution alertes"""
+
     item = (
         db.query(InventoryItem)
         .filter(InventoryItem.id == item_id, InventoryItem.fridge_id == fridge.id)
@@ -494,22 +570,45 @@ def remove_inventory_item(
 
     product = db.query(Product).filter(Product.id == item.product_id).first()
 
+    # Calculer freshness avant suppression
+    freshness_status = "unknown"
+    if item.expiry_date:
+        from datetime import date
+
+        days_until_expiry = (item.expiry_date - date.today()).days
+        if days_until_expiry < 0:
+            freshness_status = "expired"
+        elif days_until_expiry == 0:
+            freshness_status = "expires_today"
+        elif days_until_expiry <= 3:
+            freshness_status = "expiring_soon"
+        else:
+            freshness_status = "fresh"
+
+    # Résoudre toutes les alertes liées
+    db.query(Alert).filter(
+        Alert.inventory_item_id == item_id, Alert.status == "pending"
+    ).update({"status": "resolved", "resolved_at": datetime.utcnow()})
+
+    logger.info(f"Resolved all alerts for deleted item {item_id}")
+
+    # Notification smart
     try:
         notification_service = NotificationService(db)
-        notification_service.send_inventory_notification(
+        notification_service.send_smart_inventory_notification(
             fridge_id=fridge.id,
             action="removed",
             product_name=product.name if product else f"Produit #{item.product_id}",
             quantity=item.quantity,
             unit=item.unit,
+            freshness_status=freshness_status,
+            expiry_date=item.expiry_date,
             source="manual",
         )
-        logger.info(
-            f"📲 Notification sent for product removal: {product.name if product else item.product_id}"
-        )
     except Exception as e:
-        logger.error(f"❌ Failed to send notification: {e}")
+        logger.error(f"Failed to send notification: {e}")
 
+    # Event + suppression
     event = Event(
         fridge_id=fridge.id,
         inventory_item_id=item.id,
@@ -518,6 +617,7 @@ def remove_inventory_item(
             "product_name": product.name if product else "Unknown",
             "quantity": item.quantity,
             "reason": "user_delete",
+            "freshness_status": freshness_status,
         },
     )
     db.add(event)
@@ -534,8 +634,7 @@ def consume_items_batch(
     db: Session = Depends(get_db),
 ):
     """
-    🆕 NOUVEAU : Consomme plusieurs items en une seule requête
-    Utilisé après validation manuelle de l'analyse en mode SORTIE
+    AMÉLIORATION : Consomme plusieurs items avec notifications smart
     """
     results = []
     success_count = 0
@@ -575,6 +674,22 @@ def consume_items_batch(
                 failed_count += 1
                 continue
 
+            # Calculer le statut de fraîcheur AVANT consommation
+            freshness_status = "unknown"
+            if item.expiry_date:
+                from datetime import date
+
+                days_until_expiry = (item.expiry_date - date.today()).days
+
+                if days_until_expiry < 0:
+                    freshness_status = "expired"
+                elif days_until_expiry == 0:
+                    freshness_status = "expires_today"
+                elif days_until_expiry <= 3:
+                    freshness_status = "expiring_soon"
+                else:
+                    freshness_status = "fresh"
+
             old_quantity = item.quantity
             item.quantity -= item_req.quantity_consumed
 
@@ -583,6 +698,7 @@ def consume_items_batch(
 
             product = db.query(Product).filter(Product.id == item.product_id).first()
 
+            # Event
             event = Event(
                 fridge_id=fridge.id,
                 inventory_item_id=item.id,
@@ -595,26 +711,31 @@ def consume_items_batch(
                     "unit": item.unit,
                     "remaining": item.quantity,
                     "old_quantity": old_quantity,
+                    "freshness_status": freshness_status,
                 },
             )
             db.add(event)
 
-            # ✅ AJOUT : Notification pour chaque item consommé
+            # NOTIFICATION SMART (remplacement de l'ancien code)
             try:
                 notification_service = NotificationService(db)
-                notification_service.send_inventory_notification(
+                notification_service.send_smart_inventory_notification(
                     fridge_id=fridge.id,
                     action="consumed",
                     product_name=product.name if product else "Unknown",
                     quantity=item_req.quantity_consumed,
+                    remaining_quantity=item.quantity,
                     unit=item.unit,
+                    freshness_status=freshness_status,
+                    expiry_date=item.expiry_date,
                     source="vision",  # Source = vision pour batch
                 )
                 logger.info(
-                    f"📲 Batch notification sent for: {product.name if product else 'Unknown'}"
+                    f"Smart batch notification sent for: "
+                    f"{product.name if product else 'Unknown'}"
                 )
             except Exception as e:
-                logger.error(f"❌ Failed to send batch notification: {e}")
+                logger.error(f"Failed to send batch notification: {e}")
 
             results.append(
                 {
@@ -640,5 +761,7 @@ def consume_items_batch(
     db.commit()
 
     return ConsumeBatchResponse(
-        success_count=success_count, failed_count=failed_count, results=results
+        success_count=success_count,
+        failed_count=failed_count,
+        results=results,
     )

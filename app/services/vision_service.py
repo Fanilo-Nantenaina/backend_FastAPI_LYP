@@ -153,7 +153,7 @@ class VisionService:
         self, detected_name: str, detected_category: str
     ) -> Tuple[Optional[Product], float]:
         """
-        🆕 NOUVELLE MÉTHODE : Trouve le meilleur produit avec score
+        NOUVELLE MÉTHODE : Trouve le meilleur produit avec score
 
         Retourne : (Product ou None, score de 0-100)
         """
@@ -170,7 +170,7 @@ class VisionService:
         all_products = self.db.query(Product).all()
 
         if not all_products:
-            logger.info("  ❌ No products in database")
+            logger.info("  No products in database")
             return None, 0.0
 
         candidates = []  # Liste de (product, score)
@@ -179,7 +179,7 @@ class VisionService:
             normalized_db = self.normalize_product_name(product.name)
             score = 0.0
 
-            # 🎯 SCORING MULTI-CRITÈRES
+            # SCORING MULTI-CRITÈRES
 
             # 1️⃣ Match exact normalisé → 100 points
             if normalized_search == normalized_db:
@@ -346,7 +346,7 @@ class VisionService:
         self, fridge_id: int, product_id: int, detected_name: str
     ) -> Optional[InventoryItem]:
         """
-        🔄 SIMPLIFIÉ : Recherche par product_id uniquement
+        SIMPLIFIÉ : Recherche par product_id uniquement
         (Le matching est déjà fait dans _find_or_create_product)
         """
         import logging
@@ -501,7 +501,7 @@ class VisionService:
         self, detected: DetectedProduct, fridge_id: int
     ) -> Dict[str, Any]:
         """
-        CORRECTION: Garantit TOUJOURS une date d'expiration
+        AMÉLIORATION : Ajoute notifications smart pour détection vision
         """
         import logging
 
@@ -509,27 +509,30 @@ class VisionService:
 
         product = self._find_or_create_product(detected)
 
-        # ÉTAPE 1: Essayer de lire la date sur l'emballage
+        # Calculer la date d'expiration (logique existante)
         expiry_date = None
         if detected.expiry_date_text:
             expiry_date = self._parse_expiry_date(detected.expiry_date_text)
-
-        # ÉTAPE 2: Sinon, utiliser l'estimation de l'IA
         if not expiry_date and detected.estimated_shelf_life_days:
             expiry_date = date.today() + timedelta(
                 days=detected.estimated_shelf_life_days
             )
-
-        # ÉTAPE 3: Sinon, utiliser la base de données produit
         if not expiry_date and product.shelf_life_days:
             expiry_date = date.today() + timedelta(days=product.shelf_life_days)
-
-        # ÉTAPE 4: Sinon, utiliser notre base de connaissances
         if not expiry_date:
             days = self._estimate_shelf_life(detected.product_name, detected.category)
             expiry_date = date.today() + timedelta(days=days)
 
-        # À ce stade, expiry_date ne peut JAMAIS être None
+        # Calculer le statut de fraîcheur
+        freshness_status = "fresh"
+        if expiry_date:
+            days_until_expiry = (expiry_date - date.today()).days
+            if days_until_expiry < 0:
+                freshness_status = "expired"
+            elif days_until_expiry == 0:
+                freshness_status = "expires_today"
+            elif days_until_expiry <= 3:
+                freshness_status = "expiring_soon"
 
         existing_item = self._find_existing_inventory_item(
             fridge_id=fridge_id,
@@ -539,52 +542,43 @@ class VisionService:
 
         now = datetime.utcnow()
 
+        # Préparer le NotificationService
+        from app.services.notification_service import NotificationService
+
+        notification_service = NotificationService(self.db)
+
         if existing_item:
+            # MISE À JOUR d'un item existant
+            old_quantity = existing_item.quantity
             existing_item.quantity += detected.count
             existing_item.last_seen_at = now
 
-            # DEBUG : Identifier la source exacte du problème
-            logger.info(f"Debug expiry dates for product '{product.name}':")
-            logger.info(
-                f"  - existing_item.expiry_date: {existing_item.expiry_date} (type: {type(existing_item.expiry_date).__name__})"
-            )
-            logger.info(
-                f"  - new expiry_date: {expiry_date} (type: {type(expiry_date).__name__})"
-            )
-
-            # SUPER DÉFENSIF : Convertir les deux en date avant comparaison
+            # Gestion de la date d'expiration (logique existante)
             existing_expiry = existing_item.expiry_date
             new_expiry = expiry_date
 
             try:
-                # Vérifier et mettre à jour la date d'expiration
                 if existing_expiry is None:
-                    # Pas de date existante, on définit la nouvelle
-                    logger.info(f"  ➡️ Action: Setting expiry_date (was None)")
+                    logger.info(f"  ➡️ Setting expiry_date (was None)")
                     existing_item.expiry_date = new_expiry
                 elif isinstance(existing_expiry, date) and isinstance(new_expiry, date):
-                    # Les deux sont des dates valides, on compare
                     if new_expiry > existing_expiry:
                         logger.info(
-                            f"  ➡️ Action: Updating expiry_date ({existing_expiry} -> {new_expiry})"
+                            f"  ➡️ Updating expiry_date ({existing_expiry} -> {new_expiry})"
                         )
                         existing_item.expiry_date = new_expiry
                     else:
                         logger.info(
-                            f"  ➡️ Action: Keeping existing expiry_date ({existing_expiry})"
+                            f"  ➡️ Keeping existing expiry_date ({existing_expiry})"
                         )
                 else:
-                    # Types incompatibles, forcer la mise à jour
-                    logger.warning(
-                        f"  Type mismatch detected, forcing update to {new_expiry}"
-                    )
+                    logger.warning(f"  Type mismatch, forcing update to {new_expiry}")
                     existing_item.expiry_date = new_expiry
             except Exception as e:
-                # Fallback ultime : toujours définir la nouvelle date
                 logger.error(f"  Error comparing dates: {e}")
-                logger.error(f"  ➡️ Fallback: forcing expiry_date to {new_expiry}")
                 existing_item.expiry_date = new_expiry
 
+            # Event
             event = Event(
                 fridge_id=fridge_id,
                 inventory_item_id=existing_item.id,
@@ -594,21 +588,39 @@ class VisionService:
                     "added_quantity": detected.count,
                     "new_total": existing_item.quantity,
                     "expiry_date_updated": str(existing_item.expiry_date),
+                    "freshness_status": freshness_status,
                 },
             )
             self.db.add(event)
+
+            # NOTIFICATION SMART pour UPDATE
+            try:
+                notification_service.send_smart_inventory_notification(
+                    fridge_id=fridge_id,
+                    action="updated",  # Action = updated
+                    product_name=product.name,
+                    quantity=detected.count,  # Quantité ajoutée
+                    remaining_quantity=existing_item.quantity,  # Total après ajout
+                    unit=existing_item.unit,
+                    freshness_status=freshness_status,
+                    expiry_date=existing_item.expiry_date,
+                    source="vision",
+                )
+                logger.info(
+                    f"Smart notification sent for vision update: {product.name}"
+                )
+            except Exception as e:
+                logger.error(f"Failed to send vision update notification: {e}")
 
             return {
                 "action": "updated",
                 "item": existing_item,
                 "expiry_date_detected": True,
             }
+
         else:
-            # Nouvel item
+            # CRÉATION d'un nouvel item
             logger.info(f"Creating new item for product '{product.name}':")
-            logger.info(
-                f"  - expiry_date: {expiry_date} (type: {type(expiry_date).__name__})"
-            )
 
             new_item = InventoryItem(
                 fridge_id=fridge_id,
@@ -616,13 +628,14 @@ class VisionService:
                 quantity=detected.count,
                 initial_quantity=detected.count,
                 unit=product.default_unit,
-                expiry_date=expiry_date,  # Jamais None
+                expiry_date=expiry_date,
                 source="vision",
                 last_seen_at=now,
             )
             self.db.add(new_item)
             self.db.flush()
 
+            # Event
             event = Event(
                 fridge_id=fridge_id,
                 inventory_item_id=new_item.id,
@@ -632,9 +645,26 @@ class VisionService:
                     "product_name": product.name,
                     "quantity": detected.count,
                     "expiry_date": expiry_date.isoformat(),
+                    "freshness_status": freshness_status,
                 },
             )
             self.db.add(event)
+
+            # NOTIFICATION SMART pour ADD
+            try:
+                notification_service.send_smart_inventory_notification(
+                    fridge_id=fridge_id,
+                    action="added",  # Action = added
+                    product_name=product.name,
+                    quantity=detected.count,
+                    unit=new_item.unit,
+                    freshness_status=freshness_status,
+                    expiry_date=expiry_date,
+                    source="vision",
+                )
+                logger.info(f"Smart notification sent for vision add: {product.name}")
+            except Exception as e:
+                logger.error(f"Failed to send vision add notification: {e}")
 
             return {
                 "action": "added",
@@ -687,7 +717,7 @@ class VisionService:
 
     def _find_or_create_product(self, detected: DetectedProduct) -> Product:
         """
-        🔄 REFONTE COMPLÈTE : Utilise le nouveau système de scoring
+        REFONTE COMPLÈTE : Utilise le nouveau système de scoring
 
         Seuil de matching : 70%
         - >= 70% : Utilise le produit existant
@@ -702,12 +732,12 @@ class VisionService:
         logger.info(f"🔍 PRODUCT MATCHING: '{detected_name}'")
         logger.info(f"{'='*60}")
 
-        # 🎯 Recherche avec scoring
+        # Recherche avec scoring
         best_product, best_score = self._find_best_product_match(
             detected_name, detected.category
         )
 
-        # 📊 DÉCISION basée sur le score
+        # DÉCISION basée sur le score
         MATCH_THRESHOLD = 70.0  # Seuil configurable
 
         if best_product and best_score >= MATCH_THRESHOLD:
@@ -716,8 +746,8 @@ class VisionService:
             )
             return best_product
 
-        # ❌ Pas de match suffisant → Créer nouveau produit
-        logger.info(f"🆕 CREATING NEW PRODUCT: '{detected_name}'")
+        # Pas de match suffisant → Créer nouveau produit
+        logger.info(f"CREATING NEW PRODUCT: '{detected_name}'")
         if best_product:
             logger.info(
                 f"   (best match was '{best_product.name}' with {best_score:.1f}%, below threshold)"

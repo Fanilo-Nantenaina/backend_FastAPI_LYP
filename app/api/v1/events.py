@@ -75,6 +75,7 @@ def list_events(
         },
     }
 
+
 @router.get("/statistics", response_model=Dict[str, Any])
 def get_event_statistics(
     fridge: Fridge = Depends(get_user_fridge),
@@ -82,7 +83,7 @@ def get_event_statistics(
     days: int = Query(30, ge=1, le=365, description="Nombre de jours d'historique"),
 ):
     """
-    📊 Statistiques complètes sur l'activité du frigo
+    Statistiques complètes sur l'activité du frigo
 
     **Retourne:**
     - Répartition par type d'événement
