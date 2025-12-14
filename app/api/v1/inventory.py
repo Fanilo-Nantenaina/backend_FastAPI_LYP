@@ -214,7 +214,7 @@ def add_inventory_item(
         )
         .first()
     )
-    
+
     try:
         notification_service = NotificationService(db)
         notification_service.send_inventory_notification(
@@ -332,6 +332,8 @@ def update_inventory_item(
     old_quantity = item.quantity
     old_expiry_date = item.expiry_date
 
+    product = db.query(Product).filter(Product.id == item.product_id).first()
+
     if request.quantity is not None:
         if request.quantity < 0:
             raise HTTPException(status_code=400, detail="Quantity cannot be negative")
@@ -370,6 +372,24 @@ def update_inventory_item(
 
     db.commit()
     db.refresh(item)
+
+    try:
+        notification_service = NotificationService(db)
+        notification_service.send_inventory_notification(
+            fridge_id=fridge.id,
+            action="updated",
+            product_name=product.name if product else f"Produit #{item.product_id}",
+            quantity=(
+                request.quantity if request.quantity is not None else item.quantity
+            ),
+            unit=item.unit,
+            source="manual",
+        )
+        logger.info(
+            f"📲 Notification sent for product update: {product.name if product else item.product_id}"
+        )
+    except Exception as e:
+        logger.error(f"❌ Failed to send notification: {e}")
 
     if request.expiry_date is not None:
         from app.services.alert_service import AlertService
@@ -437,6 +457,23 @@ def consume_item(
     db.add(event)
     db.commit()
     db.refresh(item)
+
+    try:
+        notification_service = NotificationService(db)
+        notification_service.send_inventory_notification(
+            fridge_id=fridge.id,
+            action="consumed",
+            product_name=product.name if product else f"Produit #{item.product_id}",
+            quantity=request.quantity_consumed,
+            unit=item.unit,
+            source="manual",
+        )
+        logger.info(
+            f"📲 Notification sent for product consumption: {product.name if product else item.product_id}"
+        )
+    except Exception as e:
+        logger.error(f"❌ Failed to send notification: {e}")
+
     return _enrich_inventory_response(item, db)
 
 
@@ -456,6 +493,23 @@ def remove_inventory_item(
         raise HTTPException(status_code=404, detail="Inventory item not found")
 
     product = db.query(Product).filter(Product.id == item.product_id).first()
+
+    try:
+        notification_service = NotificationService(db)
+        notification_service.send_inventory_notification(
+            fridge_id=fridge.id,
+            action="removed",
+            product_name=product.name if product else f"Produit #{item.product_id}",
+            quantity=item.quantity,
+            unit=item.unit,
+            source="manual",
+        )
+        logger.info(
+            f"📲 Notification sent for product removal: {product.name if product else item.product_id}"
+        )
+    except Exception as e:
+        logger.error(f"❌ Failed to send notification: {e}")
+
     event = Event(
         fridge_id=fridge.id,
         inventory_item_id=item.id,
@@ -481,17 +535,14 @@ def consume_items_batch(
 ):
     """
     🆕 NOUVEAU : Consomme plusieurs items en une seule requête
-
     Utilisé après validation manuelle de l'analyse en mode SORTIE
     """
-
     results = []
     success_count = 0
     failed_count = 0
 
     for item_req in request.items:
         try:
-            # Récupérer l'item
             item = (
                 db.query(InventoryItem)
                 .filter(
@@ -512,7 +563,6 @@ def consume_items_batch(
                 failed_count += 1
                 continue
 
-            # Vérifier quantité disponible
             if item.quantity < item_req.quantity_consumed:
                 results.append(
                     {
@@ -525,15 +575,12 @@ def consume_items_batch(
                 failed_count += 1
                 continue
 
-            # Consommer (logique existante)
             old_quantity = item.quantity
             item.quantity -= item_req.quantity_consumed
 
-            # Marquer comme ouvert si consommation partielle
             if item.quantity > 0 and not item.open_date:
                 item.open_date = date.today()
 
-            # Événement
             product = db.query(Product).filter(Product.id == item.product_id).first()
 
             event = Event(
@@ -551,6 +598,23 @@ def consume_items_batch(
                 },
             )
             db.add(event)
+
+            # ✅ AJOUT : Notification pour chaque item consommé
+            try:
+                notification_service = NotificationService(db)
+                notification_service.send_inventory_notification(
+                    fridge_id=fridge.id,
+                    action="consumed",
+                    product_name=product.name if product else "Unknown",
+                    quantity=item_req.quantity_consumed,
+                    unit=item.unit,
+                    source="vision",  # Source = vision pour batch
+                )
+                logger.info(
+                    f"📲 Batch notification sent for: {product.name if product else 'Unknown'}"
+                )
+            except Exception as e:
+                logger.error(f"❌ Failed to send batch notification: {e}")
 
             results.append(
                 {
