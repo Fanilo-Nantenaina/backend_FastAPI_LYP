@@ -634,11 +634,18 @@ def consume_items_batch(
     db: Session = Depends(get_db),
 ):
     """
-    AMÉLIORATION : Consomme plusieurs items avec notifications smart
+    ✨ AMÉLIORÉ : Consomme plusieurs items avec UNE SEULE notification groupée
     """
+    import logging
+
+    logger = logging.getLogger(__name__)
+
     results = []
     success_count = 0
     failed_count = 0
+
+    # 📦 COLLECTER les infos pour notification groupée
+    notification_products = []
 
     for item_req in request.items:
         try:
@@ -716,26 +723,18 @@ def consume_items_batch(
             )
             db.add(event)
 
-            # NOTIFICATION SMART (remplacement de l'ancien code)
-            try:
-                notification_service = NotificationService(db)
-                notification_service.send_smart_inventory_notification(
-                    fridge_id=fridge.id,
-                    action="consumed",
-                    product_name=product.name if product else "Unknown",
-                    quantity=item_req.quantity_consumed,
-                    remaining_quantity=item.quantity,
-                    unit=item.unit,
-                    freshness_status=freshness_status,
-                    expiry_date=item.expiry_date,
-                    source="vision",  # Source = vision pour batch
-                )
-                logger.info(
-                    f"Smart batch notification sent for: "
-                    f"{product.name if product else 'Unknown'}"
-                )
-            except Exception as e:
-                logger.error(f"Failed to send batch notification: {e}")
+            # 📦 COLLECTER pour notification groupée (ne pas envoyer maintenant)
+            notification_products.append(
+                {
+                    "product_name": product.name if product else "Unknown",
+                    "action": "consumed",
+                    "quantity": item_req.quantity_consumed,
+                    "remaining_quantity": item.quantity,
+                    "unit": item.unit,
+                    "freshness_status": freshness_status,
+                    "expiry_date": item.expiry_date,
+                }
+            )
 
             results.append(
                 {
@@ -759,6 +758,24 @@ def consume_items_batch(
             failed_count += 1
 
     db.commit()
+
+    # ✅ ENVOYER UNE SEULE NOTIFICATION GROUPÉE
+    if notification_products:
+        try:
+            from app.services.notification_service import NotificationService
+
+            notification_service = NotificationService(db)
+
+            notification_service.send_batch_scan_notification(
+                fridge_id=fridge.id,
+                scan_type="consume",
+                products=notification_products,
+            )
+            logger.info(
+                f"✅ Sent batch consume notification for {len(notification_products)} products"
+            )
+        except Exception as e:
+            logger.error(f"❌ Failed to send batch consume notification: {e}")
 
     return ConsumeBatchResponse(
         success_count=success_count,

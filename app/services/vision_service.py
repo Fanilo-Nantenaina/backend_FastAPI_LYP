@@ -364,9 +364,9 @@ class VisionService:
         )
 
         if existing:
-            logger.info(f"  📦 Found existing inventory item (ID: {existing.id})")
+            logger.info(f"  Found existing inventory item (ID: {existing.id})")
         else:
-            logger.info(f"  📦 No existing inventory item")
+            logger.info(f"  No existing inventory item")
 
         return existing
 
@@ -376,8 +376,11 @@ class VisionService:
     ) -> Dict[str, Any]:
         """
         Analyse l'image et met à jour l'inventaire
-        CORRECTION: Toujours définir une date d'expiration
+        ✨ AMÉLIORATION : Notification groupée unique au lieu d'une par produit
         """
+        import logging
+
+        logger = logging.getLogger(__name__)
 
         detected_products = await self._analyze_image_with_gemini(image_file)
 
@@ -385,9 +388,14 @@ class VisionService:
         items_updated = []
         needs_manual_entry = []
 
+        # 📦 COLLECTER les infos pour notification groupée
+        notification_products = []
+
         for detected in detected_products:
             result = self._process_detected_product(
-                detected=detected, fridge_id=fridge_id
+                detected=detected,
+                fridge_id=fridge_id,
+                send_notification=False,  # ❌ Ne pas envoyer individuellement
             )
 
             if result["action"] == "added":
@@ -395,13 +403,28 @@ class VisionService:
             elif result["action"] == "updated":
                 items_updated.append(result["item"])
 
-            # Plus besoin de needs_manual_entry car on définit toujours la date
+            # Collecter les infos pour notification groupée
+            notification_products.append(
+                {
+                    "product_name": (
+                        result["item"].product.name
+                        if hasattr(result["item"], "product")
+                        else detected.product_name
+                    ),
+                    "action": result["action"],
+                    "quantity": result["item"].quantity,
+                    "unit": result["item"].unit,
+                    "freshness_status": result.get("freshness_status", "unknown"),
+                    "expiry_date": result["item"].expiry_date,
+                }
+            )
 
+        # Event groupé
         from app.models.event import Event
 
         event = Event(
             fridge_id=fridge_id,
-            type="ITEM_DETECTED",  # Changé de INVENTORY_UPDATED
+            type="ITEM_DETECTED",
             payload={
                 "source": "vision_scan",
                 "timestamp": datetime.utcnow().isoformat(),
@@ -411,6 +434,24 @@ class VisionService:
             },
         )
         self.db.add(event)
+
+        # ✅ ENVOYER UNE SEULE NOTIFICATION GROUPÉE
+        if notification_products:
+            try:
+                from app.services.notification_service import NotificationService
+
+                notification_service = NotificationService(self.db)
+
+                notification_service.send_batch_scan_notification(
+                    fridge_id=fridge_id,
+                    scan_type="add",
+                    products=notification_products,
+                )
+                logger.info(
+                    f"✅ Sent batch notification for {len(notification_products)} products"
+                )
+            except Exception as e:
+                logger.error(f"❌ Failed to send batch notification: {e}")
 
         return {
             "timestamp": datetime.now().isoformat(),
@@ -498,10 +539,18 @@ class VisionService:
         return detected
 
     def _process_detected_product(
-        self, detected: DetectedProduct, fridge_id: int
+        self,
+        detected: DetectedProduct,
+        fridge_id: int,
+        send_notification: bool = True,  # 🆕 Nouveau paramètre
     ) -> Dict[str, Any]:
         """
-        AMÉLIORATION : Ajoute notifications smart pour détection vision
+        MODIFIÉ : Traite un produit détecté avec option de désactiver la notification
+
+        Args:
+            detected: Produit détecté
+            fridge_id: ID du frigo
+            send_notification: Si False, ne pas envoyer de notification individuelle
         """
         import logging
 
@@ -542,10 +591,11 @@ class VisionService:
 
         now = datetime.utcnow()
 
-        # Préparer le NotificationService
-        from app.services.notification_service import NotificationService
+        # Préparer le NotificationService (seulement si send_notification=True)
+        if send_notification:
+            from app.services.notification_service import NotificationService
 
-        notification_service = NotificationService(self.db)
+            notification_service = NotificationService(self.db)
 
         if existing_item:
             # MISE À JOUR d'un item existant
@@ -593,29 +643,31 @@ class VisionService:
             )
             self.db.add(event)
 
-            # NOTIFICATION SMART pour UPDATE
-            try:
-                notification_service.send_smart_inventory_notification(
-                    fridge_id=fridge_id,
-                    action="updated",  # Action = updated
-                    product_name=product.name,
-                    quantity=detected.count,  # Quantité ajoutée
-                    remaining_quantity=existing_item.quantity,  # Total après ajout
-                    unit=existing_item.unit,
-                    freshness_status=freshness_status,
-                    expiry_date=existing_item.expiry_date,
-                    source="vision",
-                )
-                logger.info(
-                    f"Smart notification sent for vision update: {product.name}"
-                )
-            except Exception as e:
-                logger.error(f"Failed to send vision update notification: {e}")
+            # NOTIFICATION INDIVIDUELLE (seulement si demandé)
+            if send_notification:
+                try:
+                    notification_service.send_smart_inventory_notification(
+                        fridge_id=fridge_id,
+                        action="updated",
+                        product_name=product.name,
+                        quantity=detected.count,
+                        remaining_quantity=existing_item.quantity,
+                        unit=existing_item.unit,
+                        freshness_status=freshness_status,
+                        expiry_date=existing_item.expiry_date,
+                        source="vision",
+                    )
+                    logger.info(
+                        f"Smart notification sent for vision update: {product.name}"
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to send vision update notification: {e}")
 
             return {
                 "action": "updated",
                 "item": existing_item,
                 "expiry_date_detected": True,
+                "freshness_status": freshness_status,
             }
 
         else:
@@ -650,26 +702,30 @@ class VisionService:
             )
             self.db.add(event)
 
-            # NOTIFICATION SMART pour ADD
-            try:
-                notification_service.send_smart_inventory_notification(
-                    fridge_id=fridge_id,
-                    action="added",  # Action = added
-                    product_name=product.name,
-                    quantity=detected.count,
-                    unit=new_item.unit,
-                    freshness_status=freshness_status,
-                    expiry_date=expiry_date,
-                    source="vision",
-                )
-                logger.info(f"Smart notification sent for vision add: {product.name}")
-            except Exception as e:
-                logger.error(f"Failed to send vision add notification: {e}")
+            # NOTIFICATION INDIVIDUELLE (seulement si demandé)
+            if send_notification:
+                try:
+                    notification_service.send_smart_inventory_notification(
+                        fridge_id=fridge_id,
+                        action="added",
+                        product_name=product.name,
+                        quantity=detected.count,
+                        unit=new_item.unit,
+                        freshness_status=freshness_status,
+                        expiry_date=expiry_date,
+                        source="vision",
+                    )
+                    logger.info(
+                        f"Smart notification sent for vision add: {product.name}"
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to send vision add notification: {e}")
 
             return {
                 "action": "added",
                 "item": new_item,
                 "expiry_date_detected": True,
+                "freshness_status": freshness_status,
             }
 
     def _estimate_shelf_life(self, product_name: str, category: str) -> int:

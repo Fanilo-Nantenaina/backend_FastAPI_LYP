@@ -590,7 +590,7 @@ L'équipe Smart Fridge
         source: str = "manual",
     ) -> bool:
         """
-        📦 NOUVEAU : Envoie une notification pour une action d'inventaire
+        NOUVEAU : Envoie une notification pour une action d'inventaire
 
         Args:
             fridge_id: ID du frigo
@@ -604,33 +604,28 @@ L'équipe Smart Fridge
             True si envoyé avec succès
         """
         try:
-            # Récupérer le frigo et l'utilisateur
             fridge = self.db.query(Fridge).filter(Fridge.id == fridge_id).first()
             if not fridge or not fridge.user_id:
                 logger.warning(f"Fridge {fridge_id} not found or no user")
                 return False
 
-            # Construire le titre et le message
             title_map = {
-                "added": "📦 Produit ajouté",
-                "updated": "✏️ Produit modifié",
-                "consumed": "🍽️ Produit consommé",
-                "removed": "🗑️ Produit retiré",
+                "added": "Produit ajouté",
+                "updated": "Produit modifié",
+                "consumed": "Produit consommé",
+                "removed": "Produit retiré",
             }
 
-            title = title_map.get(action, "📦 Inventaire mis à jour")
+            title = title_map.get(action, "Inventaire mis à jour")
 
-            # Message détaillé
             if quantity and unit:
                 body = f"{product_name} : {quantity} {unit}"
             else:
                 body = product_name
 
-            # Ajouter la source si c'est un scan
             if source == "vision":
                 body += " (scan IA)"
 
-            # Envoyer la notification push
             return self.send_push_notification(
                 user_id=fridge.user_id,
                 title=title,
@@ -667,13 +662,11 @@ L'équipe Smart Fridge
         """
         from datetime import date
 
-        # Récupérer le frigo et l'utilisateur
         fridge = self.db.query(Fridge).filter(Fridge.id == fridge_id).first()
         if not fridge or not fridge.user_id:
             logger.warning(f"Fridge {fridge_id} not found or no user")
             return False
 
-        # GÉNÉRATION CONTEXTUELLE DU MESSAGE
         title, body, emoji = self._generate_smart_message(
             action=action,
             product_name=product_name,
@@ -685,7 +678,6 @@ L'équipe Smart Fridge
             source=source,
         )
 
-        # Envoyer la notification push
         return self.send_push_notification(
             user_id=fridge.user_id,
             title=title,
@@ -712,7 +704,7 @@ L'équipe Smart Fridge
         source: str = "manual",
     ) -> tuple:
         """
-        🧠 INTELLIGENCE ARTIFICIELLE CONTEXTUELLE
+        INTELLIGENCE ARTIFICIELLE CONTEXTUELLE
 
         Génère des messages humains selon le contexte complet
 
@@ -721,12 +713,8 @@ L'équipe Smart Fridge
         """
         from datetime import date
 
-        # ==========================================
-        # 🍽️ ACTION : CONSOMMATION
-        # ==========================================
         if action == "consumed":
 
-            # 🚨 CAS 1 : Produit EXPIRÉ consommé (bizarre !)
             if freshness_status == "expired":
                 title = "Attention à la fraîcheur"
                 body = f"Vous avez consommé {product_name} qui était périmé. Assurez-vous qu'il était encore bon !"
@@ -734,7 +722,6 @@ L'équipe Smart Fridge
                     body += f" Il en reste {remaining_quantity} {unit}, pensez à les jeter pour votre sécurité."
                 return (title, body, "⚠️")
 
-            # 🟠 CAS 2 : Produit qui expire AUJOURD'HUI
             elif freshness_status == "expires_today":
                 title = "👍 Parfait timing !"
                 body = f"Vous avez consommé {product_name} pile avant expiration. "
@@ -744,7 +731,6 @@ L'équipe Smart Fridge
                     body += "Plus aucun gaspillage, bravo ! 🎉"
                 return (title, body, "👍")
 
-            # 🟡 CAS 3 : Produit qui expire BIENTÔT
             elif freshness_status == "expiring_soon":
                 title = "⏰ Bonne initiative !"
                 body = f"{product_name} consommé avant péremption. "
@@ -768,9 +754,8 @@ L'équipe Smart Fridge
 
                 return (title, body, "⏰")
 
-            # CAS 4 : Produit FRAIS (normal)
             else:
-                title = "🍽️ Bon appétit !"
+                title = "Bon appétit !"
 
                 if source == "vision":
                     body = f"{product_name} détecté automatiquement et retiré de l'inventaire"
@@ -787,11 +772,8 @@ L'équipe Smart Fridge
 
                 return (title, body, "🍽️")
 
-        # ==========================================
-        # ➕ ACTION : AJOUT
-        # ==========================================
         elif action == "added":
-            title = "📦 Nouveau produit !"
+            title = "Nouveau produit !"
 
             if source == "vision":
                 body = f"{product_name} détecté automatiquement par scan IA"
@@ -801,7 +783,6 @@ L'équipe Smart Fridge
             if quantity and unit:
                 body += f" ({quantity} {unit})"
 
-            # Ajouter info sur fraîcheur si pertinent
             if freshness_status == "expiring_soon" and expiry_date:
                 from datetime import date as dt
 
@@ -817,11 +798,8 @@ L'équipe Smart Fridge
 
             return (title, body, "📦")
 
-        # ==========================================
-        # ✏️ ACTION : MODIFICATION
-        # ==========================================
         elif action == "updated":
-            title = "✏️ Produit mis à jour"
+            title = "Produit mis à jour"
             body = f"{product_name} modifié"
 
             if quantity and unit:
@@ -829,26 +807,20 @@ L'équipe Smart Fridge
 
             return (title, body, "✏️")
 
-        # ==========================================
-        # 🗑️ ACTION : SUPPRESSION
-        # ==========================================
         elif action == "removed":
 
-            # Cas spécial : suppression d'un produit périmé
             if freshness_status == "expired":
-                title = "🗑️ Bon réflexe !"
+                title = "Bon réflexe !"
                 body = f"{product_name} périmé retiré du frigo. Merci de garder un frigo sain !"
                 return (title, body, "🗑️")
 
-            # Cas spécial : suppression d'un produit qui expire bientôt
             elif freshness_status == "expiring_soon":
                 title = "Produit retiré"
                 body = f"{product_name} retiré alors qu'il expire bientôt. Pensez à le consommer si possible !"
                 return (title, body, "⚠️")
 
-            # Cas normal
             else:
-                title = "🗑️ Produit retiré"
+                title = "Produit retiré"
                 body = f"{product_name} supprimé de l'inventaire"
 
                 if quantity and unit:
@@ -856,12 +828,202 @@ L'équipe Smart Fridge
 
                 return (title, body, "🗑️")
 
-        # ==========================================
-        # FALLBACK (cas non géré)
-        # ==========================================
         else:
-            title = f"📱 Mise à jour : {product_name}"
+            title = f"Mise à jour : {product_name}"
             body = f"Action : {action}"
             if quantity and unit:
                 body += f" ({quantity} {unit})"
             return (title, body, "📱")
+
+    def send_batch_scan_notification(
+        self,
+        fridge_id: int,
+        scan_type: str,
+        products: List[Dict[str, Any]],
+    ) -> bool:
+        """
+        NOUVEAU : Notification groupée pour scan d'image batch
+
+        Envoie UNE SEULE notification avec résumé de tous les produits
+
+        Args:
+            fridge_id: ID du frigo
+            scan_type: "add" (ajout) ou "consume" (sortie)
+            products: Liste de dicts avec :
+                - product_name: str
+                - action: "added", "updated", "consumed"
+                - quantity: float
+                - unit: str
+                - freshness_status: str (optionnel)
+                - expiry_date: date (optionnel)
+
+        Returns:
+            True si envoyé avec succès
+        """
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        try:
+            fridge = self.db.query(Fridge).filter(Fridge.id == fridge_id).first()
+            if not fridge or not fridge.user_id:
+                logger.warning(f"Fridge {fridge_id} not found or no user")
+                return False
+
+            if not products:
+                logger.info("No products to notify")
+                return False
+
+            title, body, emoji = self._generate_batch_scan_message(
+                scan_type=scan_type,
+                products=products,
+            )
+
+            data = {
+                "type": "batch_scan",
+                "scan_type": scan_type,
+                "fridge_id": str(fridge_id),
+                "product_count": str(len(products)),
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+
+            success = self.send_push_notification(
+                user_id=fridge.user_id,
+                title=title,
+                body=body,
+                data=data,
+            )
+
+            if success:
+                logger.info(
+                    f"✅ Batch notification sent: {len(products)} products "
+                    f"({scan_type}) to fridge {fridge_id}"
+                )
+            else:
+                logger.warning(f"❌ Failed to send batch notification")
+
+            return success
+
+        except Exception as e:
+            logger.error(f"Failed to send batch scan notification: {e}")
+            return False
+
+    def _generate_batch_scan_message(
+        self,
+        scan_type: str,
+        products: List[Dict[str, Any]],
+    ) -> tuple:
+        """
+        GÉNÉRATEUR DE MESSAGE GROUPÉ INTELLIGENT
+
+        Crée un message concis mais informatif pour plusieurs produits
+
+        Returns:
+            (title, body, emoji)
+        """
+        from datetime import date
+
+        total_products = len(products)
+
+        if scan_type == "add":
+            added_count = sum(1 for p in products if p.get("action") == "added")
+            updated_count = sum(1 for p in products if p.get("action") == "updated")
+
+            expiring_soon = []
+            expires_today = []
+
+            for product in products:
+                freshness = product.get("freshness_status", "unknown")
+                if freshness == "expiring_soon":
+                    expiring_soon.append(product["product_name"])
+                elif freshness == "expires_today":
+                    expires_today.append(product["product_name"])
+
+            title = f"{total_products} produit{'s' if total_products > 1 else ''} scanné{'s' if total_products > 1 else ''}"
+
+            body_parts = []
+
+            if total_products <= 3:
+                product_list = ", ".join([p["product_name"] for p in products])
+                body_parts.append(product_list)
+            else:
+                first_products = ", ".join([p["product_name"] for p in products[:2]])
+                remaining = total_products - 2
+                body_parts.append(
+                    f"{first_products} et {remaining} autre{'s' if remaining > 1 else ''}"
+                )
+
+            action_details = []
+            if added_count > 0:
+                action_details.append(
+                    f"{added_count} ajouté{'s' if added_count > 1 else ''}"
+                )
+            if updated_count > 0:
+                action_details.append(f"{updated_count} mis à jour")
+
+            if action_details:
+                body_parts.append(f"({', '.join(action_details)})")
+
+            if expires_today:
+                body_parts.append(
+                    f" {len(expires_today)} expire{'nt' if len(expires_today) > 1 else ''} aujourd'hui !"
+                )
+            elif expiring_soon:
+                body_parts.append(
+                    f"⏰ {len(expiring_soon)} expire{'nt' if len(expiring_soon) > 1 else ''} bientôt"
+                )
+
+            body = " • ".join(body_parts)
+            emoji = "📦"
+
+        elif scan_type == "consume":
+            fully_consumed = sum(
+                1 for p in products if p.get("remaining_quantity", 1) == 0
+            )
+            partially_consumed = total_products - fully_consumed
+
+            expired_consumed = sum(
+                1 for p in products if p.get("freshness_status") == "expired"
+            )
+
+            title = f"{total_products} produit{'s' if total_products > 1 else ''} consommé{'s' if total_products > 1 else ''}"
+
+            body_parts = []
+
+            if total_products <= 3:
+                product_list = ", ".join([p["product_name"] for p in products])
+                body_parts.append(product_list)
+            else:
+                first_products = ", ".join([p["product_name"] for p in products[:2]])
+                remaining = total_products - 2
+                body_parts.append(
+                    f"{first_products} et {remaining} autre{'s' if remaining > 1 else ''}"
+                )
+
+            stock_details = []
+            if fully_consumed > 0:
+                stock_details.append(
+                    f"{fully_consumed} épuisé{'s' if fully_consumed > 1 else ''}"
+                )
+            if partially_consumed > 0:
+                stock_details.append(f"{partially_consumed} en stock")
+
+            if stock_details:
+                body_parts.append(f"({', '.join(stock_details)})")
+
+            if expired_consumed > 0:
+                body_parts.append(
+                    f" {expired_consumed} périmé{'s' if expired_consumed > 1 else ''} !"
+                )
+
+            body = " • ".join(body_parts)
+            emoji = "🍽️"
+
+        else:
+            title = f"{total_products} produits mis à jour"
+            body = ", ".join([p["product_name"] for p in products[:3]])
+            if total_products > 3:
+                body += f" et {total_products - 3} autres"
+            emoji = "📱"
+
+        return (title, body, emoji)

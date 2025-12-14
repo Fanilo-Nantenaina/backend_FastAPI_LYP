@@ -6,6 +6,7 @@ import logging
 from app.middleware.transaction_handler import transactional
 from app.models.event import Event
 from app.models.inventory import InventoryItem
+from app.models.product import Product
 
 logger = logging.getLogger(__name__)
 

@@ -78,7 +78,7 @@ async def get_current_user_id(
     logger.info(f"🔑 Received token: {token[:50]}...")
 
     payload = decode_token(token)
-    logger.info(f"📦 Payload: {payload}")
+    logger.info(f"Payload: {payload}")
 
     user_id_str = payload.get("sub")
     logger.info(f"👤 User ID from payload: {user_id_str} (type: {type(user_id_str)})")
