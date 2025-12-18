@@ -435,7 +435,7 @@ class VisionService:
         )
         self.db.add(event)
 
-        # ✅ ENVOYER UNE SEULE NOTIFICATION GROUPÉE
+        # ENVOYER UNE SEULE NOTIFICATION GROUPÉE
         if notification_products:
             try:
                 from app.services.notification_service import NotificationService
@@ -448,7 +448,7 @@ class VisionService:
                     products=notification_products,
                 )
                 logger.info(
-                    f"✅ Sent batch notification for {len(notification_products)} products"
+                    f"Sent batch notification for {len(notification_products)} products"
                 )
             except Exception as e:
                 logger.error(f"❌ Failed to send batch notification: {e}")

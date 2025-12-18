@@ -203,7 +203,7 @@ ALERTES EN ATTENTE :
             for alert in pending_alerts:
                 body += f"• [{alert.type}] {alert.message}\n"
         else:
-            body += "Aucune alerte en attente. Tout va bien ! ✅\n"
+            body += "Aucune alerte en attente. Tout va bien ! \n"
 
         body += f"""
 
@@ -896,7 +896,7 @@ L'équipe Smart Fridge
 
             if success:
                 logger.info(
-                    f"✅ Batch notification sent: {len(products)} products "
+                    f"Batch notification sent: {len(products)} products "
                     f"({scan_type}) to fridge {fridge_id}"
                 )
             else:

@@ -56,6 +56,7 @@ class RecipeService:
         self.db.refresh(recipe)
         return recipe
 
+
     def find_feasible_recipes(
         self,
         fridge_id: int,
@@ -65,9 +66,12 @@ class RecipeService:
     ) -> List[Dict[str, Any]]:
         """
         CU6: Trouve les recettes faisables avec l'inventaire actuel
-        VERSION CORRIGÉE ET UNIQUE
+        ✅ CORRIGÉ : Calcul cohérent et précis des pourcentages
         """
         from app.models.shopping_list import ShoppingList, ShoppingListItem
+        import logging
+
+        logger = logging.getLogger(__name__)
 
         all_recipes = self.db.query(Recipe).filter(Recipe.fridge_id == fridge_id).all()
 
@@ -82,26 +86,70 @@ class RecipeService:
             for item in inventory
         }
 
+        logger.info(
+            f"📦 Inventaire du frigo {fridge_id}: {len(available_products)} produits"
+        )
+
         feasible_recipes = []
 
         for recipe in all_recipes:
-            # Vérifier les restrictions alimentaires
             if not self._check_dietary_restrictions(recipe, user):
                 continue
 
-            # Vérifier la disponibilité des ingrédients dans le frigo
-            can_make, missing_ingredients = self._check_ingredients_availability(
-                recipe, available_products
+            recipe_ingredients = recipe.ingredients
+            total_ingredients = len(recipe_ingredients)
+
+            if total_ingredients == 0:
+                continue
+
+            available_count = 0
+            missing_ingredients = []
+
+            # ✅ ÉTAPE 1: Analyser chaque ingrédient
+            for ingredient in recipe_ingredients:
+                product_id = ingredient.product_id
+                required_qty = ingredient.quantity or 0
+
+                available = available_products.get(product_id)
+
+                if available and available["quantity"] >= required_qty:
+                    available_count += 1
+                    logger.debug(f"  ✅ {ingredient.product_id} disponible")
+                else:
+                    product = (
+                        self.db.query(Product).filter(Product.id == product_id).first()
+                    )
+
+                    missing_ingredients.append(
+                        {
+                            "product_id": product_id,
+                            "product_name": (
+                                product.name if product else f"Product #{product_id}"
+                            ),
+                            "quantity": required_qty,
+                            "unit": ingredient.unit,
+                            "available_quantity": (
+                                available["quantity"] if available else 0
+                            ),
+                        }
+                    )
+                    logger.debug(f"  ❌ {product_id} manquant")
+
+            # ✅ Pourcentage de base (inventaire seul)
+            match_percentage = (available_count / total_ingredients) * 100
+            can_make = len(missing_ingredients) == 0
+
+            logger.info(
+                f"📊 Recipe '{recipe.title}': "
+                f"{available_count}/{total_ingredients} ingrédients → "
+                f"match={match_percentage:.1f}%, "
+                f"missing={len(missing_ingredients)}"
             )
 
-            # Pourcentage basé sur le frigo uniquement
-            match_percentage = self._calculate_match_percentage(
-                recipe, available_products
-            )
-
+            # ✅ ÉTAPE 2: Vérifier la shopping list associée
             shopping_list_status = None
             shopping_list_id = None
-            ingredients_complete = can_make  # True si tout est dans le frigo
+            ingredients_complete = can_make
             purchased_missing_count = 0
             total_missing_count = len(missing_ingredients)
             combined_percentage = match_percentage
@@ -123,63 +171,83 @@ class RecipeService:
                 total_items = len(related_shopping_list.items)
 
                 if total_items > 0:
-                    purchased_items = sum(
+                    purchased_items_count = sum(
                         1
                         for item in related_shopping_list.items
                         if item.status == "purchased"
                     )
 
-                    # Déterminer le statut de la liste
-                    if purchased_items == total_items:
+                    logger.info(
+                        f"  🛒 Shopping list: {purchased_items_count}/{total_items} achetés"
+                    )
+
+                    # ✅ Déterminer le statut de la liste
+                    if purchased_items_count == total_items:
                         shopping_list_status = "completed"
-                    elif purchased_items > 0:
+                    elif purchased_items_count > 0:
                         shopping_list_status = "in_progress"
                     else:
                         shopping_list_status = "pending"
 
-                    if shopping_list_status == "completed":
-                        # Liste complétée = tous les ingrédients disponibles
-                        ingredients_complete = True
-                        combined_percentage = 100.0
-                        purchased_missing_count = total_missing_count
-                        logger.info(f"Recipe '{recipe.title}': liste COMPLÉTÉE -> 100%")
+                    # ✅ CALCUL AMÉLIORÉ: Compter VRAIMENT les ingrédients manquants achetés
+                    purchased_product_ids = {
+                        item.product_id
+                        for item in related_shopping_list.items
+                        if item.status == "purchased"
+                    }
 
-                    elif shopping_list_status in ["in_progress", "pending"]:
-                        # Liste en cours : calculer le pourcentage combiné
-                        purchased_product_ids = {
-                            item.product_id
-                            for item in related_shopping_list.items
-                            if item.status == "purchased"
-                        }
+                    # Vérifier combien d'ingrédients manquants ont été achetés
+                    for missing in missing_ingredients:
+                        missing_product_id = missing.get("product_id")
+                        if (
+                            missing_product_id
+                            and missing_product_id in purchased_product_ids
+                        ):
+                            purchased_missing_count += 1
 
-                        # Compter les ingrédients manquants qui ont été achetés
-                        for missing in missing_ingredients:
-                            missing_product_id = missing.get("product_id")
-                            if (
-                                missing_product_id
-                                and missing_product_id in purchased_product_ids
-                            ):
-                                purchased_missing_count += 1
+                    logger.info(
+                        f"  📈 Ingrédients manquants achetés: {purchased_missing_count}/{total_missing_count}"
+                    )
 
-                        # Vérifier si tous les manquants ont été achetés
-                        if total_missing_count > 0:
-                            ingredients_complete = (
-                                purchased_missing_count >= total_missing_count
+                    # ✅ CALCUL FINAL du combined_percentage
+                    if shopping_list_status == "completed" and total_missing_count > 0:
+                        # Si TOUS les articles sont achetés ET tous les manquants couverts
+                        if purchased_missing_count >= total_missing_count:
+                            combined_percentage = 100.0
+                            ingredients_complete = True
+                            logger.info(
+                                "  ✅ TOUS les ingrédients manquants achetés → 100%"
                             )
-
-                            # Calculer le pourcentage combiné
-                            missing_percentage = 100 - match_percentage
-                            purchased_percentage = (
+                        else:
+                            # Liste complète mais ne couvre pas tout
+                            missing_coverage = (
                                 purchased_missing_count / total_missing_count
-                            ) * missing_percentage
-                            combined_percentage = (
-                                match_percentage + purchased_percentage
+                            ) * 100
+                            combined_percentage = match_percentage + (
+                                missing_coverage * (100 - match_percentage) / 100
                             )
+                            logger.info(
+                                f"  ⚠️ Liste complète mais couvre seulement "
+                                f"{purchased_missing_count}/{total_missing_count} manquants → {combined_percentage:.1f}%"
+                            )
+
+                    elif purchased_missing_count > 0 and total_missing_count > 0:
+                        # Calcul proportionnel pour achats partiels
+                        missing_percentage = 100 - match_percentage
+                        coverage_ratio = purchased_missing_count / total_missing_count
+                        added_percentage = coverage_ratio * missing_percentage
+                        combined_percentage = match_percentage + added_percentage
+
+                        # Vérifier si complet
+                        if purchased_missing_count >= total_missing_count:
+                            ingredients_complete = True
+                            combined_percentage = 100.0
 
                         logger.info(
-                            f"Recipe '{recipe.title}': frigo={match_percentage}%, "
-                            f"achetés={purchased_missing_count}/{total_missing_count}, "
-                            f"combiné={combined_percentage}%"
+                            f"  📊 Frigo: {match_percentage:.1f}%, "
+                            f"Achetés: {purchased_missing_count}/{total_missing_count} "
+                            f"({coverage_ratio*100:.1f}% des manquants), "
+                            f"Combiné: {combined_percentage:.1f}%"
                         )
 
             feasible_recipes.append(
@@ -188,10 +256,8 @@ class RecipeService:
                     "can_make": can_make,
                     "missing_ingredients": missing_ingredients,
                     "match_percentage": round(match_percentage, 1),
-                    # Infos liste de courses
                     "shopping_list_id": shopping_list_id,
                     "shopping_list_status": shopping_list_status,
-                    # Statut combiné
                     "ingredients_complete": ingredients_complete,
                     "combined_percentage": round(combined_percentage, 1),
                     "purchased_missing_count": purchased_missing_count,
@@ -199,16 +265,13 @@ class RecipeService:
                 }
             )
 
+        # Tri
         reverse = sort_order == "desc"
 
         if sort_by == "match":
-            feasible_recipes.sort(
-                key=lambda x: x["combined_percentage"], reverse=reverse
-            )
+            feasible_recipes.sort(key=lambda x: x["combined_percentage"], reverse=reverse)
         elif sort_by == "name":
-            feasible_recipes.sort(
-                key=lambda x: x["recipe"].title.lower(), reverse=reverse
-            )
+            feasible_recipes.sort(key=lambda x: x["recipe"].title.lower(), reverse=reverse)
         elif sort_by == "date":
             feasible_recipes.sort(key=lambda x: x["recipe"].created_at, reverse=reverse)
         elif sort_by == "time":
@@ -217,8 +280,10 @@ class RecipeService:
             )
 
         logger.info(
-            f"Trouvé {len(feasible_recipes)} recettes (triées par {sort_by} {sort_order})"
+            f"✅ Trouvé {len(feasible_recipes)} recettes "
+            f"(triées par {sort_by} {sort_order})"
         )
+
         return feasible_recipes
 
     def _check_dietary_restrictions(self, recipe: Recipe, user: User) -> bool:

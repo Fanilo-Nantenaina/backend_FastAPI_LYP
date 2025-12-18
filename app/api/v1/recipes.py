@@ -265,18 +265,52 @@ async def save_suggested_recipe(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Sauvegarde une recette suggérée par l'IA dans la base de données
-
-    MODIFIÉ : Sauvegarde avec fridge_id
+    """
+    Sauvegarde une recette suggérée par l'IA dans la base de données
+    ✅ CORRIGÉ : Utilise les available_ingredients de l'IA pour un matching précis
     """
     try:
+        from app.services.vision_service import VisionService
+
+        # Récupérer l'inventaire du frigo pour avoir les product_id disponibles
+        from app.models.inventory import InventoryItem
+
+        inventory_items = (
+            db.query(InventoryItem)
+            .filter(
+                InventoryItem.fridge_id == suggestion.fridge_id,
+                InventoryItem.quantity > 0,
+            )
+            .all()
+        )
+
+        # Créer un mapping product_id -> product pour l'inventaire
+        inventory_products = {}
+        for item in inventory_items:
+            product = db.query(Product).filter(Product.id == item.product_id).first()
+            if product:
+                inventory_products[product.id] = product
+
+        logger.info(
+            f"Inventaire du frigo {suggestion.fridge_id}: {len(inventory_products)} produits"
+        )
+
+        # Créer un set des noms disponibles (normalisés) depuis l'IA
+        available_from_ai = set()
+        if suggestion.available_ingredients:
+            available_from_ai = {
+                VisionService.normalize_product_name(name.strip())
+                for name in suggestion.available_ingredients
+            }
+            logger.info(f"IA considère disponibles: {available_from_ai}")
+
         recipe = Recipe(
             title=suggestion.title,
             description=suggestion.description,
             steps=suggestion.steps,
             preparation_time=suggestion.preparation_time,
             difficulty=suggestion.difficulty,
-            fridge_id=suggestion.fridge_id,  # AJOUT
+            fridge_id=suggestion.fridge_id,
             extra_data={
                 "created_from": "ai_suggestion",
                 "created_by_user_id": current_user.id,
@@ -287,22 +321,92 @@ async def save_suggested_recipe(
         db.flush()
 
         for ingredient_data in suggestion.ingredients:
-            product = (
-                db.query(Product)
-                .filter(Product.name.ilike(ingredient_data["name"]))
-                .first()
+            ingredient_name = ingredient_data["name"].strip()
+            normalized_ingredient = VisionService.normalize_product_name(
+                ingredient_name
             )
 
+            # ✅ PRIORITÉ 1: Si l'IA dit que c'est disponible, chercher dans l'inventaire
+            product = None
+            best_match = None
+            best_score = 0.0
+
+            if normalized_ingredient in available_from_ai:
+                logger.info(
+                    f"🔍 '{ingredient_name}' marqué DISPONIBLE par l'IA, recherche dans inventaire..."
+                )
+
+                # Chercher parmi les produits de l'inventaire uniquement
+                for prod_id, prod in inventory_products.items():
+                    normalized_db = VisionService.normalize_product_name(prod.name)
+
+                    # Match exact normalisé
+                    if normalized_ingredient == normalized_db:
+                        best_match = prod
+                        best_score = 100.0
+                        logger.info(f"  ✅ EXACT MATCH: '{prod.name}' (ID: {prod.id})")
+                        break
+
+                    # Similarité haute
+                    similarity = VisionService.calculate_similarity(
+                        normalized_ingredient, normalized_db
+                    )
+
+                    if (
+                        similarity > best_score and similarity >= 60
+                    ):  # Seuil abaissé pour inventaire
+                        best_match = prod
+                        best_score = similarity
+
+                if best_match:
+                    product = best_match
+                    logger.info(
+                        f"  ✅ Matched DISPONIBLE '{ingredient_name}' → '{product.name}' "
+                        f"(ID: {product.id}, score: {best_score:.1f}%)"
+                    )
+                else:
+                    logger.warning(
+                        f"  ⚠️ L'IA dit '{ingredient_name}' disponible mais RIEN trouvé dans inventaire!"
+                    )
+
+            # ✅ PRIORITÉ 2: Si pas trouvé dans inventaire, chercher dans TOUS les produits
+            if not product:
+                all_products = db.query(Product).all()
+
+                for prod in all_products:
+                    normalized_db = VisionService.normalize_product_name(prod.name)
+
+                    if normalized_ingredient == normalized_db:
+                        product = prod
+                        best_score = 100.0
+                        logger.info(
+                            f"  ✅ EXACT MATCH global: '{prod.name}' (ID: {prod.id})"
+                        )
+                        break
+
+                    similarity = VisionService.calculate_similarity(
+                        normalized_ingredient, normalized_db
+                    )
+
+                    if similarity > best_score and similarity >= 70:
+                        product = prod
+                        best_score = similarity
+
+            # ✅ PRIORITÉ 3: Créer nouveau produit si aucun match
             if not product:
                 product = Product(
-                    name=ingredient_data["name"].strip().capitalize(),
+                    name=ingredient_name.capitalize(),
                     category="Divers",
                     default_unit=ingredient_data.get("unit", "pièce"),
                     shelf_life_days=7,
                 )
                 db.add(product)
                 db.flush()
+                logger.info(
+                    f"  🆕 Created new product: '{product.name}' (ID: {product.id})"
+                )
 
+            # Créer l'ingrédient de recette
             recipe_ingredient = RecipeIngredient(
                 recipe_id=recipe.id,
                 product_id=product.id,
@@ -315,7 +419,7 @@ async def save_suggested_recipe(
         db.refresh(recipe)
 
         logger.info(
-            f"Saved AI-suggested recipe: {recipe.id} - {recipe.title} "
+            f"✅ Saved AI-suggested recipe: {recipe.id} - {recipe.title} "
             f"(fridge_id: {recipe.fridge_id})"
         )
 
