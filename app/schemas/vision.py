@@ -13,8 +13,6 @@ class DetectedProduct(BaseModel):
 
 
 class DetectedProductMatch(BaseModel):
-    """Produit détecté avec matching automatique"""
-
     detected_name: str
     detected_count: int
     confidence: float
@@ -28,8 +26,6 @@ class DetectedProductMatch(BaseModel):
 
 
 class ConsumeAnalysisResponse(BaseModel):
-    """Réponse pour analyse en mode SORTIE"""
-
     timestamp: str
     detected_count: int
     detected_products: List[DetectedProductMatch]

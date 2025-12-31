@@ -12,17 +12,13 @@ logger = logging.getLogger(__name__)
 
 
 class UserService:
-    """Service de gestion des utilisateurs"""
-
     def __init__(self, db: Session):
         self.db = db
 
     def get_user_by_id(self, user_id: int) -> Optional[User]:
-        """Récupère un utilisateur par son ID"""
         return self.db.query(User).filter(User.id == user_id).first()
 
     def get_user_by_email(self, email: str) -> Optional[User]:
-        """Récupère un utilisateur par son email"""
         return self.db.query(User).filter(User.email == email).first()
 
     @transactional
@@ -34,12 +30,6 @@ class UserService:
         timezone: str = "UTC",
         dietary_restrictions: Optional[list] = None,
     ) -> Optional[User]:
-        """
-        Crée un nouvel utilisateur
-
-        Returns:
-            User créé ou None si l'email existe déjà
-        """
         try:
             user = User(
                 email=email,
@@ -66,7 +56,6 @@ class UserService:
     def update_user(
         self, user_id: int, update_data: UserUpdateRequest
     ) -> Optional[User]:
-        """Met à jour les informations d'un utilisateur"""
         user = self.get_user_by_id(user_id)
 
         if not user:
@@ -99,12 +88,6 @@ class UserService:
     def update_password(
         self, user_id: int, old_password: str, new_password: str
     ) -> bool:
-        """
-        Change le mot de passe d'un utilisateur
-
-        Returns:
-            True si le mot de passe a été changé, False sinon
-        """
         user = self.get_user_by_id(user_id)
 
         if not user:
@@ -124,11 +107,6 @@ class UserService:
 
     @transactional
     def delete_user(self, user_id: int) -> bool:
-        """
-        Supprime un utilisateur
-
-        Note: Cascade supprime automatiquement les fridges, listes, etc.
-        """
         user = self.get_user_by_id(user_id)
 
         if not user:
@@ -141,7 +119,6 @@ class UserService:
         return True
 
     def get_user_preferences(self, user_id: int) -> Dict[str, Any]:
-        """Récupère les préférences complètes d'un utilisateur"""
         user = self.get_user_by_id(user_id)
 
         if not user:
@@ -158,7 +135,6 @@ class UserService:
     def update_user_preferences(
         self, user_id: int, preferences: Dict[str, Any]
     ) -> Optional[User]:
-        """Met à jour les préférences d'un utilisateur"""
         user = self.get_user_by_id(user_id)
 
         if not user:

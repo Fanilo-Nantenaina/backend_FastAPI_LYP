@@ -10,15 +10,10 @@ from typing import Optional
 security = HTTPBearer(auto_error=False)
 
 
-# VERSION STRICTE : Lance une exception si non authentifié
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
 ) -> User:
-    """
-    Récupère l'utilisateur authentifié (REQUIS)
-    Lance une HTTPException 401 si non authentifié
-    """
     if not credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -53,15 +48,10 @@ async def get_current_user(
         )
 
 
-# VERSION OPTIONNELLE : Pour l'authentification hybride
 async def get_current_user_optional(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: Session = Depends(get_db),
 ) -> Optional[User]:
-    """
-    Récupère l'utilisateur authentifié (OPTIONNEL)
-    Retourne None si non authentifié
-    """
     if not credentials:
         return None
 
@@ -82,10 +72,9 @@ async def get_current_user_optional(
 
 async def get_user_fridge(
     fridge_id: int,
-    current_user: User = Depends(get_current_user),  # Non optionnel
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Fridge:
-    """Vérifie que le frigo appartient à l'utilisateur (RG2)"""
     fridge = (
         db.query(Fridge)
         .filter(Fridge.id == fridge_id, Fridge.user_id == current_user.id)
@@ -102,7 +91,6 @@ async def get_kiosk_fridge(
     x_kiosk_id: Optional[str] = Header(None),
     db: Session = Depends(get_db),
 ) -> Fridge:
-    """Vérifie que le kiosk a accès au frigo via son kiosk_id"""
     if not x_kiosk_id:
         raise HTTPException(status_code=401, detail="Missing X-Kiosk-ID header")
 
@@ -111,7 +99,7 @@ async def get_kiosk_fridge(
         .filter(
             Fridge.id == fridge_id,
             Fridge.kiosk_id == x_kiosk_id,
-            Fridge.is_paired == True,
+            Fridge.is_paired,
         )
         .first()
     )
@@ -123,3 +111,49 @@ async def get_kiosk_fridge(
         )
 
     return fridge
+
+
+def get_fridge_access_hybrid(
+    fridge_id: int,
+    x_kiosk_id: Optional[str] = Header(None, alias="X-Kiosk-ID"),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+) -> Fridge:
+    if x_kiosk_id:
+        fridge = (
+            db.query(Fridge)
+            .filter(
+                Fridge.id == fridge_id,
+                Fridge.kiosk_id == x_kiosk_id,
+                Fridge.is_paired,
+            )
+            .first()
+        )
+
+        if not fridge:
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied to this fridge or fridge not paired",
+            )
+
+        return fridge
+
+    elif current_user:
+        fridge = (
+            db.query(Fridge)
+            .filter(Fridge.id == fridge_id, Fridge.user_id == current_user.id)
+            .first()
+        )
+
+        if not fridge:
+            raise HTTPException(
+                status_code=404, detail="Fridge not found or access denied"
+            )
+
+        return fridge
+
+    else:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required (JWT token or X-Kiosk-ID header)",
+        )

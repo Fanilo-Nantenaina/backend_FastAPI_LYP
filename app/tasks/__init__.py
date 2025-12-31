@@ -1,7 +1,3 @@
-"""
-Background tasks and scheduler
-"""
-
 from app.tasks.scheduler import (
     start_scheduler,
     stop_scheduler,

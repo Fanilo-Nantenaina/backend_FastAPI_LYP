@@ -1,8 +1,3 @@
-"""
-Tâche périodique de vérification des alertes (CU7)
-Exécutée automatiquement par le scheduler toutes les heures
-"""
-
 from app.core.database import SessionLocal
 from app.services.alert_service import AlertService
 from app.services.notification_service import NotificationService
@@ -13,23 +8,11 @@ logger = logging.getLogger(__name__)
 
 
 def check_all_alerts():
-    """
-    CU7: Tâche principale de vérification des alertes
-
-    Cette fonction est appelée automatiquement par le scheduler
-    pour vérifier tous les frigos et créer/envoyer les alertes nécessaires
-
-    Règles appliquées:
-    - RG10: Alertes de péremption
-    - RG11: Alertes d'objets perdus
-    - RG12: Pas de duplication d'alertes
-    """
     logger.info("Starting alert check task...")
 
     db = SessionLocal()
     try:
         alert_service = AlertService(db)
-        notification_service = NotificationService(db)
 
         stats = alert_service.check_and_create_alerts(
             fridge_id=None, send_notifications=True
@@ -54,11 +37,6 @@ def check_all_alerts():
 
 
 def check_fridge_alerts(fridge_id: int):
-    """
-    Vérifie les alertes pour un frigo spécifique
-
-    Utile pour les vérifications manuelles ou déclenchées par événement
-    """
     logger.info(f"Checking alerts for fridge {fridge_id}...")
 
     db = SessionLocal()
@@ -80,11 +58,6 @@ def check_fridge_alerts(fridge_id: int):
 
 
 def send_daily_summaries():
-    """
-    Envoie les résumés quotidiens à tous les utilisateurs
-
-    Cette tâche devrait être planifiée une fois par jour (ex: 8h00)
-    """
     logger.info("📧 Starting daily summary email task...")
 
     db = SessionLocal()
@@ -130,12 +103,7 @@ def send_daily_summaries():
 
 
 def cleanup_old_data():
-    """
-    Nettoie les anciennes données (alertes résolues, événements anciens)
-
-    Cette tâche devrait être planifiée une fois par jour
-    """
-    logger.info("🧹 Starting data cleanup task...")
+    logger.info("Starting data cleanup task...")
 
     db = SessionLocal()
     try:
@@ -165,11 +133,6 @@ def cleanup_old_data():
 
 
 def check_lost_items_only():
-    """
-    Vérifie uniquement les objets perdus (pas vu depuis longtemps)
-
-    Peut être exécuté plus fréquemment que la vérification complète
-    """
     logger.info("Checking for lost items only...")
 
     db = SessionLocal()

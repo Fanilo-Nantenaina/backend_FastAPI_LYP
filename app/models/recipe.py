@@ -5,8 +5,6 @@ from app.core.database import Base
 
 
 class Recipe(Base):
-    """Modèle Recipe - Recettes de cuisine"""
-
     __tablename__ = "recipes"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -36,8 +34,6 @@ class Recipe(Base):
 
 
 class RecipeIngredient(Base):
-    """Modèle RecipeIngredient - Ingrédients d'une recette"""
-
     __tablename__ = "recipe_ingredients"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -59,12 +55,6 @@ class RecipeIngredient(Base):
 
 
 class RecipeFavorite(Base):
-    """Modèle RecipeFavorite - Recettes favorites des utilisateurs
-
-    MODIFIÉ : Ajout de fridge_id pour avoir des favoris par frigo
-    RG16: Un utilisateur ne peut pas ajouter deux fois la même recette (par frigo)
-    """
-
     __tablename__ = "recipe_favorites"
 
     id = Column(Integer, primary_key=True, index=True)

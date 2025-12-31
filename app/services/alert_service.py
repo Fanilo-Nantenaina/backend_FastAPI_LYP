@@ -1,6 +1,6 @@
 from datetime import datetime, date, timedelta
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_
+from sqlalchemy import and_
 from typing import List, Optional, Dict, Any
 import logging
 
@@ -16,13 +16,6 @@ logger = logging.getLogger(__name__)
 
 
 class AlertService:
-    """
-    Service complet de gestion des alertes
-    - CU7: Vérification automatique périodique
-    - CU8: Gestion du statut des alertes
-    - RG10, RG11, RG12: Règles de génération des alertes
-    """
-
     def __init__(self, db: Session):
         self.db = db
         self.notification_service = NotificationService(db)
@@ -30,15 +23,6 @@ class AlertService:
     def check_and_create_alerts(
         self, fridge_id: Optional[int] = None, send_notifications: bool = True
     ) -> Dict[str, int]:
-        """
-        CU7: Vérifie l'inventaire et crée les alertes nécessaires
-
-        Cette méthode est appelée automatiquement par le scheduler
-        toutes les heures pour tous les frigos.
-
-        Returns:
-            Dict avec le nombre d'alertes créées par type
-        """
         stats = {
             "EXPIRY_SOON": 0,
             "EXPIRED": 0,
@@ -106,10 +90,6 @@ class AlertService:
     def _check_expiry_alert(
         self, item: InventoryItem, fridge_id: int, warning_days: int
     ) -> Optional[Alert]:
-        """
-        RG10: Crée une alerte si le produit approche de sa date de péremption
-        ou si elle est dépassée
-        """
         if not item.expiry_date:
             return None
 
@@ -158,10 +138,6 @@ class AlertService:
     def _check_lost_item_alert(
         self, item: InventoryItem, fridge_id: int, threshold_hours: int
     ) -> Optional[Alert]:
-        """
-        RG11: Crée une alerte si l'objet n'a pas été vu depuis longtemps
-        (n'a pas été détecté par le système de vision)
-        """
         if not item.last_seen_at:
             return None
 
@@ -196,10 +172,6 @@ class AlertService:
     def _check_low_stock_alert(
         self, item: InventoryItem, fridge_id: int, threshold: float
     ) -> Optional[Alert]:
-        """
-        Crée une alerte si la quantité est en dessous du seuil configuré
-        """
-
         if not item.product.extra_data:
             return None
 
@@ -237,12 +209,6 @@ class AlertService:
         message: str,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Optional[Alert]:
-        """
-        RG12: Ne crée pas de doublon si une alerte pending du même type existe
-
-        Returns:
-            L'alerte créée, ou None si elle existe déjà
-        """
         existing = (
             self.db.query(Alert)
             .filter(
@@ -289,7 +255,6 @@ class AlertService:
         return alert
 
     def _send_alert_notifications(self, alerts: List[Alert], user: User):
-        """Envoie les notifications pour les nouvelles alertes"""
         try:
             high_priority_alerts = [
                 a for a in alerts if a.type in ["EXPIRED", "EXPIRY_SOON"]
@@ -320,7 +285,6 @@ class AlertService:
         alert_type: Optional[str] = None,
         limit: int = 50,
     ) -> List[Alert]:
-        """Récupère les alertes avec filtres optionnels"""
         query = self.db.query(Alert).filter(Alert.fridge_id == fridge_id)
 
         if status:
@@ -333,12 +297,6 @@ class AlertService:
 
     @transactional
     def resolve_alert(self, alert_id: int, user_id: int) -> bool:
-        """
-        CU8: Marque une alerte comme résolue
-
-        Returns:
-            True si l'alerte a été résolue, False sinon
-        """
         alert = (
             self.db.query(Alert)
             .join(Fridge)
@@ -373,12 +331,6 @@ class AlertService:
     def bulk_resolve_alerts(
         self, fridge_id: int, user_id: int, alert_type: Optional[str] = None
     ) -> int:
-        """
-        Résout plusieurs alertes en une fois
-
-        Returns:
-            Nombre d'alertes résolues
-        """
         query = (
             self.db.query(Alert)
             .join(Fridge)
@@ -404,15 +356,6 @@ class AlertService:
 
     @transactional
     def delete_old_alerts(self, days: int = 30) -> int:
-        """
-        Nettoie les anciennes alertes résolues
-
-        Args:
-            days: Nombre de jours à conserver
-
-        Returns:
-            Nombre d'alertes supprimées
-        """
         cutoff_date = datetime.utcnow() - timedelta(days=days)
 
         old_alerts = (

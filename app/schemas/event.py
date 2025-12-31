@@ -16,8 +16,6 @@ class EventResponse(BaseModel):
 
 
 class EventCreateRequest(BaseModel):
-    """Schéma pour créer un événement manuellement"""
-
     event_type: str = Field(
         ..., description="Type d'événement (ITEM_ADDED, ITEM_CONSUMED, etc.)"
     )
@@ -28,8 +26,6 @@ class EventCreateRequest(BaseModel):
 
 
 class EventFilterParams(BaseModel):
-    """Paramètres de filtrage pour les événements"""
-
     event_type: Optional[str] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
@@ -37,17 +33,7 @@ class EventFilterParams(BaseModel):
     offset: int = Field(0, ge=0)
 
 
-class EventFilterParams(BaseModel):
-    """Paramètres de filtrage pour les événements"""
-
-    event_type: Optional[str] = None
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
-
-
 class PaginatedEventsResponse(BaseModel):
-    """Réponse paginée pour la liste des événements"""
-
     items: List[EventResponse]
     total: int
     page: int

@@ -35,7 +35,6 @@ class InventoryItemCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_product_source(self):
-        """Vérifie qu'on a soit un product_id, soit un product_name"""
         if not self.product_id and not self.product_name:
             raise ValueError("Vous devez fournir soit product_id, soit product_name")
         return self
@@ -55,7 +54,6 @@ class InventoryItemUpdate(BaseModel):
 
     @model_validator(mode="after")
     def validate_dates(self):
-        """Vérifier la cohérence des dates après validation des champs"""
         if self.open_date and self.open_date > date.today():
             raise ValueError("La date d'ouverture ne peut pas être dans le futur")
 
@@ -94,7 +92,6 @@ class InventoryItemResponse(BaseModel):
     last_seen_at: datetime
     extra_data: Optional[Dict[str, Any]]
 
-    # Champs enrichis du produit
     product_name: Optional[str] = None
     product_category: Optional[str] = None
 
@@ -103,36 +100,26 @@ class InventoryItemResponse(BaseModel):
 
 
 class ConsumeBatchItem(BaseModel):
-    """Item à consommer dans un batch"""
-
     inventory_item_id: int
     quantity_consumed: float
-    detected_product_name: str  # Pour traçabilité
+    detected_product_name: str
 
 
 class ConsumeBatchRequest(BaseModel):
-    """Consommation multiple en une seule requête"""
-
     items: List[ConsumeBatchItem]
 
 
 class ConsumeBatchResponse(BaseModel):
-    """Résultat de la consommation batch"""
-
     success_count: int
     failed_count: int
     results: List[Dict[str, Any]]
 
 
 class SearchRequest(BaseModel):
-    """Requête de recherche vocale/textuelle"""
-
     query: str
 
 
 class SearchHistoryResponse(BaseModel):
-    """Réponse historique d'une recherche"""
-
     id: str
     query: str
     response: str
@@ -143,8 +130,6 @@ class SearchHistoryResponse(BaseModel):
 
 
 class SearchResponse(BaseModel):
-    """Réponse d'une recherche avec IA"""
-
     query: str
     response: str
     timestamp: str

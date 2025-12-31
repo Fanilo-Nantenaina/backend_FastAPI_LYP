@@ -5,11 +5,6 @@ from app.core.database import Base
 
 
 class User(Base):
-    """
-    Modèle User - Utilisateur de l'application
-    CU1: Gérer le Profil et les Préférences
-    """
-
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -18,17 +13,17 @@ class User(Base):
     name = Column(String)
     timezone = Column(String, default="UTC")
 
-    # CU1: Préférences utilisateur
-    preferred_cuisine = Column(String)  # Cuisine préférée (italienne, française, etc.)
+                                  
+    preferred_cuisine = Column(String)                                                 
     dietary_restrictions = Column(
         ARRAY(String), default=list
-    )  # RG14: Restrictions alimentaires
-    prefs = Column(JSON, default=dict)  # Autres préférences en JSON
+    )                                   
+    prefs = Column(JSON, default=dict)                              
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Relations
+               
     fridges = relationship(
         "Fridge", back_populates="user", cascade="all, delete-orphan"
     )

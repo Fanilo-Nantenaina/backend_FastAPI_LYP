@@ -26,21 +26,10 @@ def list_events(
     page: int = Query(1, ge=1, description="Numéro de page"),
     page_size: int = Query(50, ge=1, le=100, description="Nombre d'éléments par page"),
 ):
-    """
-    Liste les événements du frigo avec filtres avancés
-
-    **Filtres disponibles:**
-    - `event_type`: Type d'événement (ITEM_ADDED, ITEM_CONSUMED, etc.)
-    - `start_date`: Date de début au format ISO 8601 (ex: 2024-01-01T00:00:00)
-    - `end_date`: Date de fin au format ISO 8601
-    - `page`: Numéro de page (défaut: 1)
-    - `page_size`: Éléments par page (défaut: 50, max: 100)
-    """
     event_service = EventService(db)
 
     offset = (page - 1) * page_size
 
-    # Utiliser la méthode du service avec tous les filtres
     events = event_service.get_events(
         fridge_id=fridge.id,
         event_type=event_type,
@@ -50,7 +39,6 @@ def list_events(
         end_date=end_date,
     )
 
-    # Compter le total pour la pagination
     query = db.query(Event).filter(Event.fridge_id == fridge.id)
     if event_type:
         query = query.filter(Event.type == event_type)
@@ -81,17 +69,6 @@ def get_event_statistics(
     db: Session = Depends(get_db),
     days: int = Query(30, ge=1, le=365, description="Nombre de jours d'historique"),
 ):
-    """
-    Statistiques complètes sur l'activité du frigo
-
-    **Retourne:**
-    - Répartition par type d'événement
-    - Produits les plus consommés (top 10)
-    - Activité par jour de la semaine
-    - Source des ajouts (manuel, vision, scan)
-    - Activité quotidienne (graphique)
-    - Taux d'utilisation (ajoutés vs consommés)
-    """
     event_service = EventService(db)
     return event_service.get_event_statistics(fridge.id, days)
 
@@ -103,24 +80,8 @@ def get_item_event_history(
     db: Session = Depends(get_db),
     limit: int = Query(20, ge=1, le=100, description="Nombre max d'événements"),
 ):
-    """
-    🔍 Historique complet d'un item spécifique
-
-    **Retourne tous les événements liés à un item:**
-    - Ajout initial
-    - Modifications de quantité
-    - Mises à jour de date d'expiration
-    - Consommations
-    - Suppression
-
-    **Utile pour:**
-    - Traçabilité d'un produit
-    - Audit des modifications
-    - Timeline détaillée
-    """
     event_service = EventService(db)
 
-    # Vérifier que l'item appartient bien au frigo de l'utilisateur
     from app.models.inventory import InventoryItem
 
     item = (
@@ -148,27 +109,8 @@ def cleanup_old_events(
     ),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    🧹 Nettoyer les anciens événements pour optimiser la base de données
-
-    **Attention:** Cette action est irréversible !
-
-    **Par défaut:** Supprime les événements de plus de 90 jours
-
-    **Recommandations:**
-    - Exécuter cette tâche périodiquement (cron job)
-    - Garder au moins 30 jours d'historique
-    - Faire une sauvegarde avant le nettoyage
-    """
-    # Option: Ajouter une vérification de rôle admin
-    # if not current_user.is_admin:
-    #     raise HTTPException(status_code=403, detail="Admin access required")
-
     event_service = EventService(db)
 
-    # Filtrer uniquement les événements du frigo actuel
-    # Note: La méthode cleanup_old_events actuelle nettoie TOUS les frigos
-    # Il faudrait la modifier pour accepter un fridge_id
     deleted_count = event_service.cleanup_old_events(days=days)
 
     return {
@@ -181,14 +123,6 @@ def cleanup_old_events(
 
 @router.get("/types", response_model=Dict[str, Any])
 def get_event_types():
-    """
-    Liste tous les types d'événements disponibles avec descriptions
-
-    **Utile pour:**
-    - Documentation de l'API
-    - Validation côté client
-    - Filtrage dans l'interface utilisateur
-    """
     event_types = {
         "ITEM_ADDED": {
             "description": "Un produit a été ajouté au frigo",
@@ -242,17 +176,8 @@ def get_statistics_by_event_type(
     db: Session = Depends(get_db),
     days: int = Query(30, ge=1, le=365, description="Nombre de jours d'historique"),
 ):
-    """
-    Statistiques détaillées pour un type d'événement spécifique
-
-    **Exemples d'utilisation:**
-    - Analyser uniquement les consommations (ITEM_CONSUMED)
-    - Voir les tendances d'ajouts (ITEM_ADDED)
-    - Suivre les alertes (ALERT_CREATED)
-    """
     event_service = EventService(db)
 
-    # Utiliser get_events avec filtre de type
     from datetime import datetime, timedelta
 
     cutoff_date = datetime.utcnow() - timedelta(days=days)
@@ -261,12 +186,11 @@ def get_statistics_by_event_type(
         fridge_id=fridge.id,
         event_type=event_type,
         start_date=cutoff_date,
-        limit=1000,  # Limite élevée pour les stats
+        limit=1000,
     )
 
     total_count = len(events)
 
-    # Analyse temporelle
     events_by_day = {}
     for event in events:
         day = event.created_at.date().isoformat()
@@ -277,7 +201,6 @@ def get_statistics_by_event_type(
         key=lambda x: x["date"],
     )
 
-    # Moyenne par jour
     avg_per_day = total_count / days if days > 0 else 0
 
     return {

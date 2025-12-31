@@ -4,7 +4,6 @@ from pydantic import BaseModel
 from typing import Dict
 
 class LogConfig(BaseModel):
-    """Configuration de journalisation pour l'application"""
     LOGGER_NAME: str = "fridge_app_logger"
     LOG_FORMAT: str = "%(levelprefix)s | %(asctime)s | %(name)s | %(funcName)s | %(lineno)d | %(message)s"
     LOG_LEVEL: str = "INFO"
@@ -35,7 +34,6 @@ class LogConfig(BaseModel):
     }
 
 def configure_logging():
-    """Applique la configuration de journalisation"""
     config = LogConfig()
     dictConfig(config.dict())
     logging.basicConfig(level=config.LOG_LEVEL)

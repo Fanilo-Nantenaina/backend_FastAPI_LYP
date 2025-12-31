@@ -30,7 +30,6 @@ class UserUpdateRequest(BaseModel):
 
     @validator("timezone")
     def validate_timezone(cls, v):
-        """Valider que le timezone est valide"""
         if v:
             import pytz
 
@@ -42,7 +41,6 @@ class UserUpdateRequest(BaseModel):
 
     @validator("dietary_restrictions", each_item=True)
     def validate_dietary_restrictions(cls, v):
-        """Normaliser les restrictions alimentaires"""
         if not v or not v.strip():
             raise ValueError("Les restrictions alimentaires ne peuvent pas être vides")
         return v.lower().strip()

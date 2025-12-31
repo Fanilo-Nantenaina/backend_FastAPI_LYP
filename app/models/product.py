@@ -4,11 +4,6 @@ from app.core.database import Base
 
 
 class Product(Base):
-    """
-    Modèle Product - Catalogue de produits
-    RG3: Catalogue centralisé des produits
-    """
-
     __tablename__ = "products"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -16,19 +11,19 @@ class Product(Base):
     name = Column(String, nullable=False, index=True)
     category = Column(String, index=True)
 
-    # Informations nutritionnelles et conservation
-    shelf_life_days = Column(Integer, default=7)  # Durée de conservation estimée
-    default_unit = Column(String, default="piece")  # piece, kg, L, etc.
+                                                  
+    shelf_life_days = Column(Integer, default=7)                                 
+    default_unit = Column(String, default="piece")                      
 
-    # Métadonnées
+                 
     image_url = Column(String)
     tags = Column(
         ARRAY(String), default=list
-    )  # vegan, gluten-free, dairy, etc. (pour RG14)
+    )                                               
 
-    extra_data = Column(JSON, default=dict)  # ✔️ Renommé
+    extra_data = Column(JSON, default=dict)              
 
-    # Relations
+               
     inventory_items = relationship("InventoryItem", back_populates="product")
     recipe_ingredients = relationship("RecipeIngredient", back_populates="product")
     shopping_list_items = relationship("ShoppingListItem", back_populates="product")

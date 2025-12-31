@@ -36,8 +36,6 @@ class FridgeResponse(BaseModel):
 
 
 class KioskInitResponse(BaseModel):
-    """Réponse après initialisation du kiosk"""
-
     kiosk_id: str
     pairing_code: str
     expires_in_minutes: int
@@ -49,8 +47,6 @@ class KioskInitRequest(BaseModel):
 
 
 class KioskStatusResponse(BaseModel):
-    """Statut d'un kiosk"""
-
     kiosk_id: str
     is_paired: bool
     fridge_id: Optional[int]
@@ -60,8 +56,6 @@ class KioskStatusResponse(BaseModel):
 
 
 class PairingRequest(BaseModel):
-    """Requête de pairing depuis le client mobile"""
-
     pairing_code: str = Field(
         ...,
         min_length=6,
@@ -75,8 +69,6 @@ class PairingRequest(BaseModel):
 
 
 class PairingResponse(BaseModel):
-    """Réponse après pairing réussi"""
-
     fridge_id: int
     fridge_name: str
     fridge_location: Optional[str]
@@ -85,7 +77,5 @@ class PairingResponse(BaseModel):
 
 
 class UpdateFridgeInfoRequest(BaseModel):
-    """Modification du nom/localisation après pairing"""
-
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     location: Optional[str] = Field(None, max_length=100)

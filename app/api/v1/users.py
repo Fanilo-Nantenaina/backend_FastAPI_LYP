@@ -10,7 +10,6 @@ router = APIRouter(prefix="/users", tags=["Users"])
 
 @router.get("/me", response_model=UserResponse)
 def get_current_user_profile(current_user: User = Depends(get_current_user)):
-    """Récupérer le profil de l'utilisateur connecté"""
     return current_user
 
 
@@ -20,7 +19,6 @@ def update_profile(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """CU1: Gérer le Profil et les Préférences"""
     if request.name is not None:
         current_user.name = request.name
     if request.preferred_cuisine is not None:

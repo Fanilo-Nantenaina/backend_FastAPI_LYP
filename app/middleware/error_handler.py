@@ -7,7 +7,6 @@ logger = logging.getLogger(__name__)
 
 
 async def global_exception_handler(request: Request, exc: Exception):
-    """Gestionnaire global d'erreurs"""
 
     if isinstance(exc, IntegrityError):
         logger.error(f"Database Integrity Error: {exc.orig}", exc_info=True)

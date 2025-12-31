@@ -4,11 +4,6 @@ from datetime import datetime
 
 
 class ShoppingListItemCreate(BaseModel):
-    """
-    Schéma pour créer un item de liste de courses
-    Accepte SOIT product_id (produit existant), SOIT product_name (nouveau produit)
-    """
-
     product_id: Optional[int] = Field(None, gt=0)
     product_name: Optional[str] = Field(None, min_length=1, max_length=200)
     quantity: float = Field(..., gt=0)
@@ -59,20 +54,15 @@ class GenerateShoppingListRequest(BaseModel):
 
 
 class GenerateFromIngredientsRequest(BaseModel):
-    """
-    Requête pour générer une liste de courses depuis des ingrédients bruts
-    AJOUT : recipe_id optionnel pour lier à une recette
-    """
-
     fridge_id: int = Field(..., gt=0)
     ingredients: List[Dict[str, Any]] = Field(..., min_length=1)
-    recipe_id: Optional[int] = None  # NOUVEAU
+    recipe_id: Optional[int] = None
 
     class Config:
         json_schema_extra = {
             "example": {
                 "fridge_id": 1,
-                "recipe_id": 42,  # Optionnel
+                "recipe_id": 42,
                 "ingredients": [
                     {"name": "Oignon", "quantity": 2, "unit": "pièces"},
                     {"name": "Crème fraîche", "quantity": 200, "unit": "ml"},

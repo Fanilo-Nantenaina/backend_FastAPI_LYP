@@ -1,16 +1,20 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
 import asyncio
+from app.core.database import get_db
+from app.models.alert import Alert
+from app.models.fridge import Fridge
+from app.core.dependencies import get_fridge_access_hybrid
+import json
 
 router = APIRouter(prefix="/realtime", tags=["Real-time"])
 
 
 @router.get("/alerts/{fridge_id}")
 async def stream_alerts(
-    fridge: Fridge = Depends(get_user_fridge), db: Session = Depends(get_db)
+    fridge: Fridge = Depends(get_fridge_access_hybrid), db: Session = Depends(get_db)
 ):
-    """Stream des alertes en temps réel"""
-
     async def event_generator():
         last_alert_id = 0
 

@@ -5,15 +5,6 @@ from app.core.database import Base
 
 
 class InventoryItem(Base):
-    """
-    Modèle InventoryItem - Articles dans le frigo
-    RG4: Un item d'inventaire référence un produit du catalogue
-    RG6: Quantités avec unités
-    RG7: Suivi de la dernière détection
-    RG8: Gestion des dates d'ouverture
-    RG9: Quantité ne peut être négative
-    """
-
     __tablename__ = "inventory_items"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -24,26 +15,26 @@ class InventoryItem(Base):
         Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False
     )
 
-    # Quantités
-    quantity = Column(Float, nullable=False)  # RG9: Doit être >= 0
-    initial_quantity = Column(Float)  # Quantité initiale lors de l'ajout
-    unit = Column(String, nullable=False)  # kg, L, piece, etc.
+               
+    quantity = Column(Float, nullable=False)                       
+    initial_quantity = Column(Float)                                     
+    unit = Column(String, nullable=False)                      
 
-    # Dates
+           
     added_at = Column(DateTime, default=datetime.utcnow)
-    open_date = Column(Date)  # RG8: Date d'ouverture si consommation partielle
-    expiry_date = Column(Date)  # Date de péremption
+    open_date = Column(Date)                                                   
+    expiry_date = Column(Date)                      
 
-    # Tracking
-    source = Column(String)  # 'manual', 'vision', 'barcode'
+              
+    source = Column(String)                                 
     last_seen_at = Column(
         DateTime, default=datetime.utcnow, index=True
-    )  # RG7: Dernière détection par vision
+    )                                      
 
-    # Métadonnées
+                 
     extra_data = Column(JSON, default=dict)
 
-    # Relations
+               
     fridge = relationship("Fridge", back_populates="inventory_items")
     product = relationship("Product", back_populates="inventory_items")
     events = relationship("Event", back_populates="inventory_item")

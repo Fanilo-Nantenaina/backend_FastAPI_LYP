@@ -28,10 +28,6 @@ def init_kiosk(
     request: KioskInitRequest,
     db: Session = Depends(get_db),
 ):
-    """
-    Initialise un nouveau frigo (kiosk physique).
-    Si device_id fourni et existe déjà → restaure le kiosk existant
-    """
     service = FridgeService(db)
     result = service.init_kiosk(
         device_id=request.device_id, device_name=request.device_name
@@ -64,10 +60,6 @@ def kiosk_heartbeat(
     kiosk_id: str,
     db: Session = Depends(get_db),
 ):
-    """
-    Heartbeat du kiosk (appelé toutes les 30s).
-    Maintient la connexion active.
-    """
     service = FridgeService(db)
     service.update_heartbeat(kiosk_id)
 
@@ -82,10 +74,6 @@ def get_kiosk_status(
     kiosk_id: str,
     db: Session = Depends(get_db),
 ):
-    """
-    Vérifie si le kiosk a été pairé.
-    Le kiosk poll cette route toutes les 5s après génération du code.
-    """
     service = FridgeService(db)
     status = service.get_fridge_status(kiosk_id)
 
@@ -101,24 +89,6 @@ def pair_fridge(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Lie un frigo existant à l'utilisateur connecté.
-
-    Flow :
-    1. User ouvre l'app mobile
-    2. User scanne le QR code OU entre le code 6 chiffres
-    3. Cette API lie le frigo à l'utilisateur
-
-    Args:
-        pairing_code : Code 6 chiffres affiché sur le kiosk
-        fridge_name : Nom personnalisé (défaut "Mon Frigo")
-        fridge_location : Localisation (optionnel)
-
-    Returns:
-        - fridge_id : ID du frigo
-        - kiosk_id : UUID du kiosk
-        - access_token : Token pour accéder au frigo
-    """
     service = FridgeService(db)
 
     result = service.pair_fridge(
@@ -142,9 +112,6 @@ def list_fridges(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Liste tous les frigos de l'utilisateur
-    """
     service = FridgeService(db)
     fridges = service.get_user_fridges(current_user.id)
 
@@ -157,9 +124,6 @@ def get_fridge(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Récupère un frigo spécifique
-    """
     service = FridgeService(db)
     fridge = service.get_fridge_by_id(fridge_id, current_user.id)
 
@@ -176,9 +140,6 @@ def update_fridge(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Modifie le nom/localisation du frigo après pairing.
-    """
     service = FridgeService(db)
 
     fridge = service.update_fridge(
@@ -201,10 +162,6 @@ def unpair_fridge(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Délie un frigo (reset à unpaired).
-    Supprime également tout l'inventaire !
-    """
     service = FridgeService(db)
     success = service.unpair_fridge(fridge_id, current_user.id)
 
@@ -220,9 +177,6 @@ def get_fridge_statistics(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Statistiques détaillées du frigo
-    """
     service = FridgeService(db)
 
     fridge = service.get_fridge_by_id(fridge_id, current_user.id)
@@ -239,9 +193,6 @@ def get_fridge_summary(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Résumé rapide du frigo
-    """
     service = FridgeService(db)
 
     fridge = service.get_fridge_by_id(fridge_id, current_user.id)
@@ -255,11 +206,10 @@ def get_fridge_summary(
 @router.post("/{fridge_id}/register-fcm-token")
 async def register_fcm_token(
     fridge_id: int,
-    request: dict,  # {"fcm_token": "xxx"}
+    request: dict,                        
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Enregistre le token FCM pour les push notifications"""
     notification_service = NotificationService(db)
     success = notification_service.register_fcm_token(
         fridge_id=fridge_id, fcm_token=request["fcm_token"], user_id=current_user.id

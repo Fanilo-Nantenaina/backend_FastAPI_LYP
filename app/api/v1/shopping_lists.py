@@ -29,7 +29,6 @@ router = APIRouter(prefix="/shopping-lists", tags=["Shopping Lists"])
 
 
 def _enrich_shopping_list_response(shopping_list: ShoppingList, db: Session) -> Dict:
-    """Enrichit la réponse avec les noms de produits ET recipe_id"""
     items = []
     for item in shopping_list.items:
         product = db.query(Product).filter(Product.id == item.product_id).first()
@@ -67,13 +66,6 @@ def create_shopping_list(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    CU4: Créer manuellement une liste de courses
-
-    AMÉLIORÉ : Accepte les articles personnalisés (sans product_id)
-    - Si product_id fourni : utilise le produit existant
-    - Si product_name fourni : crée le produit ou trouve un existant
-    """
     fridge = (
         db.query(Fridge)
         .filter(Fridge.id == request.fridge_id, Fridge.user_id == current_user.id)
@@ -174,7 +166,7 @@ def generate_shopping_list(
     db.refresh(shopping_list)
 
     logger.info(
-        f"📋 Shopping list created: id={shopping_list.id}, "
+        f"Shopping list created: id={shopping_list.id}, "
         f"name={shopping_list.name}, recipe_id={shopping_list.recipe_id}"
     )
 
@@ -187,7 +179,6 @@ def complete_shopping_list(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Marque une liste comme complétée"""
     shopping_list = (
         db.query(ShoppingList)
         .filter(ShoppingList.id == list_id, ShoppingList.user_id == current_user.id)
@@ -222,10 +213,6 @@ def generate_shopping_list_from_ingredients(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Génère une liste de courses depuis des ingrédients bruts (suggestion IA)
-    CORRIGÉ : Accepte maintenant un recipe_id optionnel
-    """
     fridge = (
         db.query(Fridge)
         .filter(Fridge.id == request.fridge_id, Fridge.user_id == current_user.id)
@@ -324,13 +311,12 @@ def list_shopping_lists(
     return [_enrich_shopping_list_response(lst, db) for lst in lists]
 
 
-@router.get("/{list_id}", response_model=Dict) 
+@router.get("/{list_id}", response_model=Dict)
 def get_shopping_list(
     list_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Récupère une liste de courses spécifique"""
     shopping_list = (
         db.query(ShoppingList)
         .filter(ShoppingList.id == list_id, ShoppingList.user_id == current_user.id)
@@ -351,7 +337,6 @@ def update_item_status(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Marquer un item comme acheté/pending/annulé"""
     shopping_list = (
         db.query(ShoppingList)
         .filter(ShoppingList.id == list_id, ShoppingList.user_id == current_user.id)
@@ -410,7 +395,6 @@ def mark_all_as_purchased(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Marque tous les items pending comme purchased"""
     shopping_list = (
         db.query(ShoppingList)
         .filter(ShoppingList.id == list_id, ShoppingList.user_id == current_user.id)
@@ -448,11 +432,6 @@ def add_item_to_list(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Ajouter un item à une liste existante
-
-    AMÉLIORÉ : Accepte product_id OU product_name
-    """
     shopping_list = (
         db.query(ShoppingList)
         .filter(ShoppingList.id == list_id, ShoppingList.user_id == current_user.id)
@@ -525,7 +504,6 @@ def delete_shopping_list_item(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Supprimer un item spécifique de la liste de courses"""
     shopping_list = (
         db.query(ShoppingList)
         .filter(ShoppingList.id == list_id, ShoppingList.user_id == current_user.id)
@@ -559,7 +537,6 @@ def delete_shopping_list(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Supprimer une liste de courses et tous ses items"""
     shopping_list = (
         db.query(ShoppingList)
         .filter(ShoppingList.id == list_id, ShoppingList.user_id == current_user.id)
@@ -583,10 +560,6 @@ async def suggest_diverse_products(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Suggère des produits variés basés sur l'inventaire actuel
-    Utilise Gemini pour proposer des alternatives intéressantes
-    """
     fridge_id = request.get("fridge_id")
 
     if not fridge_id:

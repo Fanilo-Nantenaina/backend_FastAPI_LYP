@@ -5,12 +5,6 @@ from app.core.database import Base
 
 
 class Event(Base):
-    """
-    Modèle Event - Historique des événements
-    RG5: Tout changement génère un événement
-    CU5: Consulter l'Historique
-    """
-
     __tablename__ = "events"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -22,13 +16,13 @@ class Event(Base):
     )
 
     type = Column(String, nullable=False, index=True)
-    # Types d'événements : ITEM_ADDED, ITEM_REMOVED, ITEM_CONSUMED,
-    # ITEM_DETECTED, EXPIRY_UPDATED, ALERT_CREATED, etc.
+                                                                   
+                                                        
 
-    payload = Column(JSON, default=dict)  # Données de l'événement
+    payload = Column(JSON, default=dict)                          
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
-    # Relations
+               
     fridge = relationship("Fridge", back_populates="events")
     inventory_item = relationship("InventoryItem", back_populates="events")
     

@@ -6,11 +6,6 @@ logger = logging.getLogger(__name__)
 
 
 def transactional(func):
-    """
-    Décorateur pour gérer automatiquement les transactions
-    Usage: @transactional sur les méthodes de service
-    """
-
     @wraps(func)
     async def async_wrapper(self, *args, **kwargs):
         db: Session = self.db

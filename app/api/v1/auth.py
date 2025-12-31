@@ -15,7 +15,6 @@ from app.schemas.auth import (
     RegisterRequest,
     RefreshRequest,
 )
-from pydantic import BaseModel
 
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -25,7 +24,6 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
     "/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED
 )
 def register(request: RegisterRequest, db: Session = Depends(get_db)):
-    """Inscription d'un nouvel utilisateur"""
     if db.query(User).filter(User.email == request.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
 
@@ -53,7 +51,6 @@ def register(request: RegisterRequest, db: Session = Depends(get_db)):
 
 @router.post("/login", response_model=TokenResponse)
 def login(request: LoginRequest, db: Session = Depends(get_db)):
-    """Connexion utilisateur"""
     user = db.query(User).filter(User.email == request.email).first()
 
     if not user or not verify_password(request.password, user.password_hash):
@@ -74,24 +71,18 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
 
 @router.post("/refresh", response_model=TokenResponse)
 def refresh_token(request: RefreshRequest, db: Session = Depends(get_db)):
-    """
-    NOUVEAU: Refresh du token d'accès
-
-    Permet au client de renouveler son access_token expiré
-    sans avoir à se reconnecter
-    """
     try:
-        # Décoder le refresh token
+                                  
         payload = decode_token(request.refresh_token)
 
-        # Vérifier que c'est bien un refresh token
+                                                  
         if payload.get("type") != "refresh":
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token type",
             )
 
-        # Récupérer l'utilisateur
+                                 
         user_id_str = payload.get("sub")
         if not user_id_str:
             raise HTTPException(
@@ -108,7 +99,7 @@ def refresh_token(request: RefreshRequest, db: Session = Depends(get_db)):
                 detail="User not found",
             )
 
-        # Générer de nouveaux tokens
+                                    
         new_access_token = create_access_token({"sub": str(user.id)})
         new_refresh_token = create_refresh_token({"sub": str(user.id)})
 

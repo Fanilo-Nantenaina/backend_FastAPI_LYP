@@ -36,14 +36,14 @@ from app.schemas.shopping_list import (
 )
 
 __all__ = [
-    # Auth
+          
     "LoginRequest",
     "RegisterRequest",
     "TokenResponse",
-    # User
+          
     "UserResponse",
     "UserUpdateRequest",
-    # Fridge
+            
     "FridgeUpdate",
     "FridgeResponse",
     "KioskInitResponse",
@@ -51,30 +51,30 @@ __all__ = [
     "PairingRequest",
     "PairingResponse",
     "UpdateFridgeInfoRequest",
-    # Product
+             
     "ProductCreate",
     "ProductUpdate",
     "ProductResponse",
-    # Inventory
+               
     "InventoryItemCreate",
     "InventoryItemUpdate",
     "InventoryItemResponse",
     "ConsumeItemRequest",
-    # Vision
+            
     "VisionAnalysisResponse",
     "ManualEntryRequest",
     "DetectedProduct",
-    # Alert
+           
     "AlertResponse",
     "AlertUpdateRequest",
-    # Event
+           
     "EventResponse",
-    # Recipe
+            
     "RecipeCreate",
     "RecipeResponse",
     "RecipeIngredientResponse",
     "FeasibleRecipeResponse",
-    # Shopping List
+                   
     "ShoppingListCreate",
     "ShoppingListResponse",
     "GenerateShoppingListRequest",

@@ -18,7 +18,6 @@ def list_products(
     category: Optional[str] = None,
     limit: int = Query(50, le=200),
 ):
-    """Liste tous les produits disponibles"""
     query = db.query(Product)
 
     if search:
@@ -36,7 +35,6 @@ def create_product(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Créer un nouveau produit"""
     product = Product(**request.dict())
     db.add(product)
     db.commit()
@@ -46,12 +44,11 @@ def create_product(
 
 @router.get("/{product_id}", response_model=ProductResponse)
 def get_product(product_id: int, db: Session = Depends(get_db)):
-    """Récupérer un produit spécifique"""
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(
             status_code=404, detail="Product not found"
-        )  # Complète la ligne
+        )                     
     return product
 
 
@@ -83,7 +80,6 @@ def delete_product(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Supprimer un produit"""
     product = db.query(Product).filter(Product.id == product_id).first()
 
     if not product:

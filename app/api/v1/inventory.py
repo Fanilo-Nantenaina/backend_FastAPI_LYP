@@ -1,11 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import Optional
 from datetime import datetime, date, timedelta
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user_optional
-from app.models.user import User
+from app.core.dependencies import get_fridge_access_hybrid
 from app.models.fridge import Fridge
 from app.models.inventory import InventoryItem
 from app.models.product import Product
@@ -27,52 +25,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/fridges/{fridge_id}/inventory", tags=["Inventory"])
 
 
-def get_fridge_access_hybrid(
-    fridge_id: int,
-    x_kiosk_id: Optional[str] = Header(None, alias="X-Kiosk-ID"),
-    current_user: Optional[User] = Depends(get_current_user_optional),
-    db: Session = Depends(get_db),
-) -> Fridge:
-    """HYBRIDE : Accepte soit kiosk_id (pour kiosk), soit JWT (pour mobile)"""
-    if x_kiosk_id:
-        fridge = (
-            db.query(Fridge)
-            .filter(
-                Fridge.id == fridge_id,
-                Fridge.kiosk_id == x_kiosk_id,
-                Fridge.is_paired,
-            )
-            .first()
-        )
-        if not fridge:
-            raise HTTPException(
-                status_code=403,
-                detail="Access denied to this fridge or fridge not paired",
-            )
-        return fridge
-    elif current_user:
-        fridge = (
-            db.query(Fridge)
-            .filter(Fridge.id == fridge_id, Fridge.user_id == current_user.id)
-            .first()
-        )
-        if not fridge:
-            raise HTTPException(
-                status_code=404, detail="Fridge not found or access denied"
-            )
-        return fridge
-    else:
-        raise HTTPException(
-            status_code=401,
-            detail="Authentication required (JWT token or X-Kiosk-ID header)",
-        )
-
-
 def _enrich_inventory_response(item: InventoryItem, db: Session) -> dict:
-    """
-    Enrichit la réponse avec TOUTES les infos du produit
-    Inclut: nom, catégorie, statut de fraîcheur, jours avant expiration
-    """
     product = db.query(Product).filter(Product.id == item.product_id).first()
 
     freshness_status = "unknown"
@@ -131,7 +84,6 @@ def list_inventory(
     db: Session = Depends(get_db),
     active_only: bool = True,
 ):
-    """Liste l'inventaire du frigo avec les noms de produits"""
     query = db.query(InventoryItem).filter(InventoryItem.fridge_id == fridge.id)
     if active_only:
         query = query.filter(InventoryItem.quantity > 0)
@@ -145,17 +97,6 @@ def add_inventory_item(
     fridge: Fridge = Depends(get_fridge_access_hybrid),
     db: Session = Depends(get_db),
 ):
-    """
-    Ajouter un article à l'inventaire SANS DUPLICATION
-
-    Logique :
-    1. Chercher un produit existant (nom insensible à la casse)
-    2. Chercher un item existant dans ce frigo pour ce produit
-    3. Si trouvé : METTRE À JOUR la quantité
-    4. Si non trouvé : CRÉER un nouvel item
-    5. Calculer automatiquement la date d'expiration si absente
-    """
-
     product = None
     product_name = None
 
@@ -216,8 +157,6 @@ def add_inventory_item(
 
         freshness_status = "fresh"
         if expiry_date:
-            from datetime import date
-
             days_until_expiry = (expiry_date - date.today()).days
             if days_until_expiry < 0:
                 freshness_status = "expired"
@@ -331,7 +270,6 @@ def update_inventory_item(
     fridge: Fridge = Depends(get_fridge_access_hybrid),
     db: Session = Depends(get_db),
 ):
-    """Mettre à jour un item d'inventaire"""
     item = (
         db.query(InventoryItem)
         .filter(InventoryItem.id == item_id, InventoryItem.fridge_id == fridge.id)
@@ -389,8 +327,6 @@ def update_inventory_item(
 
         freshness_status = "fresh"
         if item.expiry_date:
-            from datetime import date
-
             days_until_expiry = (item.expiry_date - date.today()).days
             if days_until_expiry < 0:
                 freshness_status = "expired"
@@ -444,7 +380,6 @@ def consume_item(
     fridge: Fridge = Depends(get_fridge_access_hybrid),
     db: Session = Depends(get_db),
 ):
-    """Déclarer la Consommation + Gestion des alertes"""
     item = (
         db.query(InventoryItem)
         .filter(InventoryItem.id == item_id, InventoryItem.fridge_id == fridge.id)
@@ -462,8 +397,6 @@ def consume_item(
 
     freshness_status = "unknown"
     if item.expiry_date:
-        from datetime import date
-
         today = date.today()
         days_until_expiry = (item.expiry_date - today).days
 
@@ -553,8 +486,6 @@ def remove_inventory_item(
     fridge: Fridge = Depends(get_fridge_access_hybrid),
     db: Session = Depends(get_db),
 ):
-    """Supprimer un item + notification smart + résolution alertes"""
-
     item = (
         db.query(InventoryItem)
         .filter(InventoryItem.id == item_id, InventoryItem.fridge_id == fridge.id)
@@ -565,11 +496,8 @@ def remove_inventory_item(
 
     product = db.query(Product).filter(Product.id == item.product_id).first()
 
-    # Calculer freshness avant suppression
     freshness_status = "unknown"
     if item.expiry_date:
-        from datetime import date
-
         days_until_expiry = (item.expiry_date - date.today()).days
         if days_until_expiry < 0:
             freshness_status = "expired"
@@ -580,14 +508,12 @@ def remove_inventory_item(
         else:
             freshness_status = "fresh"
 
-    # Résoudre toutes les alertes liées
     db.query(Alert).filter(
         Alert.inventory_item_id == item_id, Alert.status == "pending"
     ).update({"status": "resolved", "resolved_at": datetime.utcnow()})
 
     logger.info(f"Resolved all alerts for deleted item {item_id}")
 
-    # Notification smart
     try:
         notification_service = NotificationService(db)
         notification_service.send_smart_inventory_notification(
@@ -603,7 +529,6 @@ def remove_inventory_item(
     except Exception as e:
         logger.error(f"Failed to send notification: {e}")
 
-    # Event + suppression
     event = Event(
         fridge_id=fridge.id,
         inventory_item_id=item.id,
@@ -628,9 +553,6 @@ def consume_items_batch(
     fridge: Fridge = Depends(get_fridge_access_hybrid),
     db: Session = Depends(get_db),
 ):
-    """
-    ✨ AMÉLIORÉ : Consomme plusieurs items avec UNE SEULE notification groupée
-    """
     import logging
 
     logger = logging.getLogger(__name__)
@@ -639,7 +561,6 @@ def consume_items_batch(
     success_count = 0
     failed_count = 0
 
-    #  COLLECTER les infos pour notification groupée
     notification_products = []
 
     for item_req in request.items:
@@ -676,11 +597,8 @@ def consume_items_batch(
                 failed_count += 1
                 continue
 
-            # Calculer le statut de fraîcheur AVANT consommation
             freshness_status = "unknown"
             if item.expiry_date:
-                from datetime import date
-
                 days_until_expiry = (item.expiry_date - date.today()).days
 
                 if days_until_expiry < 0:
@@ -700,7 +618,6 @@ def consume_items_batch(
 
             product = db.query(Product).filter(Product.id == item.product_id).first()
 
-            # Event
             event = Event(
                 fridge_id=fridge.id,
                 inventory_item_id=item.id,
@@ -718,7 +635,6 @@ def consume_items_batch(
             )
             db.add(event)
 
-            #  COLLECTER pour notification groupée (ne pas envoyer maintenant)
             notification_products.append(
                 {
                     "product_name": product.name if product else "Unknown",
@@ -754,7 +670,6 @@ def consume_items_batch(
 
     db.commit()
 
-    # ENVOYER UNE SEULE NOTIFICATION GROUPÉE
     if notification_products:
         try:
             from app.services.notification_service import NotificationService

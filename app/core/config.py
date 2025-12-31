@@ -4,7 +4,7 @@ from typing import Optional, List
 
 class Settings(BaseSettings):
     APP_NAME: str = "Smart Fridge API"
-    VERSION: str = "1.0.0"
+    VERSION: str = "2.0.0"
     DEBUG: bool = False
 
     DATABASE_URL: str
@@ -22,8 +22,6 @@ class Settings(BaseSettings):
 
     DEVICE_PAIRING_CODE_LENGTH: int = 6
     DEVICE_PAIRING_TIMEOUT_MINUTES: int = 5
-
-    REDIS_URL: str = "redis://localhost:6379/0"
 
     SCHEDULER_ENABLED: bool = True
     ALERT_CHECK_INTERVAL_HOURS: int = 1

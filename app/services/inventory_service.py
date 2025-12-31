@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from typing import Optional, List, Dict, Any
+from typing import Optional, List
 from datetime import datetime, date, timedelta
 import logging
 
@@ -12,11 +12,6 @@ logger = logging.getLogger(__name__)
 
 
 class InventoryService:
-    """
-    Service de gestion de l'inventaire
-    Gère les règles RG6-RG9
-    """
-
     def __init__(self, db: Session):
         self.db = db
 
@@ -30,12 +25,6 @@ class InventoryService:
         expiry_date: Optional[date] = None,
         source: str = "manual",
     ) -> InventoryItem:
-        """
-        RG4: Ajoute un item à l'inventaire
-
-        Args:
-            source: 'manual', 'vision', 'barcode'
-        """
         product = self.db.query(Product).filter(Product.id == product_id).first()
 
         if not product:
@@ -85,10 +74,6 @@ class InventoryService:
     def update_quantity(
         self, item_id: int, new_quantity: float, reason: str = "manual_update"
     ) -> Optional[InventoryItem]:
-        """
-        Met à jour la quantité d'un item
-        RG9: La quantité ne peut être négative
-        """
         item = self.db.query(InventoryItem).filter(InventoryItem.id == item_id).first()
 
         if not item:
@@ -120,11 +105,6 @@ class InventoryService:
     def consume_item(
         self, item_id: int, quantity_consumed: float
     ) -> Optional[InventoryItem]:
-        """
-        CU3: Déclare une consommation
-        RG8: Définit open_date si consommation partielle
-        RG9: Vérifie que la quantité reste positive
-        """
         item = self.db.query(InventoryItem).filter(InventoryItem.id == item_id).first()
 
         if not item:
@@ -165,7 +145,6 @@ class InventoryService:
     def update_last_seen(
         self, item_id: int, seen_at: Optional[datetime] = None
     ) -> Optional[InventoryItem]:
-        """RG7: Met à jour last_seen_at (pour le système de vision)"""
         item = self.db.query(InventoryItem).filter(InventoryItem.id == item_id).first()
 
         if not item:
@@ -178,7 +157,6 @@ class InventoryService:
         return item
 
     def get_active_items(self, fridge_id: int) -> List[InventoryItem]:
-        """RG6: Récupère les items actifs (quantité > 0)"""
         return (
             self.db.query(InventoryItem)
             .filter(InventoryItem.fridge_id == fridge_id, InventoryItem.quantity > 0)
@@ -186,7 +164,6 @@ class InventoryService:
         )
 
     def get_expiring_items(self, fridge_id: int, days: int = 3) -> List[InventoryItem]:
-        """Récupère les items qui expirent dans X jours"""
         expiry_threshold = date.today() + timedelta(days=days)
 
         return (
@@ -201,7 +178,6 @@ class InventoryService:
         )
 
     def get_expired_items(self, fridge_id: int) -> List[InventoryItem]:
-        """Récupère les items expirés"""
         return (
             self.db.query(InventoryItem)
             .filter(
@@ -213,7 +189,6 @@ class InventoryService:
         )
 
     def remove_item(self, item_id: int, reason: str = "user_delete") -> bool:
-        """Supprime complètement un item de l'inventaire"""
         item = self.db.query(InventoryItem).filter(InventoryItem.id == item_id).first()
 
         if not item:

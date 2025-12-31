@@ -1,4 +1,4 @@
-from fastapi import HTTPException, status, Request
+from fastapi import HTTPException, status
 
 
 class FridgeNotFoundException(HTTPException):

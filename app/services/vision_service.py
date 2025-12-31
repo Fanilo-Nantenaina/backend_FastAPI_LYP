@@ -22,21 +22,17 @@ from app.schemas.vision import (
 from difflib import SequenceMatcher
 
 
-# BASE DE DONNÉES de durées de conservation par défaut
 DEFAULT_SHELF_LIFE = {
-    # Produits laitiers
     "lait": 7,
     "yaourt": 14,
     "fromage": 30,
     "beurre": 60,
     "crème": 10,
-    # Viandes
     "poulet": 3,
     "bœuf": 5,
     "porc": 5,
     "poisson": 2,
     "viande hachée": 2,
-    # Fruits
     "pomme": 14,
     "banane": 7,
     "orange": 14,
@@ -45,30 +41,25 @@ DEFAULT_SHELF_LIFE = {
     "tomate": 7,
     "citron": 21,
     "mangue": 7,
-    # Légumes
     "carotte": 21,
     "salade": 7,
     "concombre": 10,
     "poivron": 14,
     "oignon": 30,
     "pomme de terre": 60,
-    "gingembre": 30,  # AJOUT
+    "gingembre": 30,
     "ail": 60,
     "chou": 14,
     "brocoli": 7,
-    # Œufs et substituts
     "œuf": 28,
     "oeuf": 28,
-    # Plats préparés
     "pizza": 3,
     "sandwich": 2,
     "plat cuisiné": 3,
-    # Condiments
     "ketchup": 180,
     "mayonnaise": 60,
     "moutarde": 180,
     "sauce soja": 365,
-    # Défaut pour catégories
     "produit laitier": 7,
     "viande": 3,
     "fruit": 7,
@@ -96,17 +87,14 @@ class VisionService:
         if not name:
             return ""
 
-        # 1. Minuscules + strip
         name = name.lower().strip()
 
-        # 2. Supprimer les accents
         name = "".join(
             c
             for c in unicodedata.normalize("NFD", name)
             if unicodedata.category(c) != "Mn"
         )
 
-        # 3. Supprimer les articles
         articles = [
             "le ",
             "la ",
@@ -123,7 +111,6 @@ class VisionService:
             if name.startswith(article):
                 name = name[len(article) :]
 
-        # 4. Supprimer les pluriels
         words = name.split()
         normalized_words = []
         for word in words:
@@ -133,7 +120,6 @@ class VisionService:
 
         name = " ".join(normalized_words)
 
-        # 5. Nettoyer
         name = re.sub(r"\s+", " ", name).strip()
         name = re.sub(r"[^\w\s-]", "", name)
 
@@ -164,32 +150,26 @@ class VisionService:
             f"🔍 Searching best match for: '{detected_name}' → normalized: '{normalized_search}'"
         )
 
-        # Récupérer TOUS les produits
         all_products = self.db.query(Product).all()
 
         if not all_products:
             logger.info("  No products in database")
             return None, 0.0
 
-        candidates = []  # Liste de (product, score)
+        candidates = []
 
         for product in all_products:
             normalized_db = self.normalize_product_name(product.name)
             score = 0.0
 
-            # SCORING MULTI-CRITÈRES
-
-            # 1️⃣ Match exact normalisé → 100 points
             if normalized_search == normalized_db:
                 score = 100.0
                 logger.info(f"  EXACT MATCH: '{product.name}' (score: {score})")
 
-            # 2️⃣ Similarité de chaîne (difflib) → 0-95 points
             else:
                 similarity = self.calculate_similarity(normalized_search, normalized_db)
                 score = similarity
 
-                # 3️⃣ Bonus : Un mot est contenu dans l'autre → +20 points
                 words_search = set(normalized_search.split())
                 words_db = set(normalized_db.split())
 
@@ -199,21 +179,18 @@ class VisionService:
                         f"   Subset bonus: '{product.name}' ({similarity:.1f}% + 20 = {score:.1f})"
                     )
 
-                # 4️⃣ Bonus : Même catégorie → +10 points
                 if detected_category.lower() == product.category.lower():
                     score += 10
                     logger.info(f"  🏷️ Category bonus: '{product.name}' (same category)")
 
-                # 5️⃣ Bonus : Début identique → +15 points
                 min_len = min(len(normalized_search), len(normalized_db))
                 if min_len >= 4 and normalized_search[:4] == normalized_db[:4]:
                     score += 15
                     logger.info(f"  🔤 Prefix bonus: '{product.name}' (same start)")
 
-            # Cap à 100 max
             score = min(score, 100.0)
 
-            if score >= 50:  # Seuil minimum de pertinence
+            if score >= 50:
                 candidates.append((product, score))
                 logger.info(f"Candidate: '{product.name}' (score: {score:.1f})")
 
@@ -221,7 +198,6 @@ class VisionService:
             logger.info("No candidates above threshold (50%)")
             return None, 0.0
 
-        # Trier par score décroissant
         candidates.sort(key=lambda x: x[1], reverse=True)
         best_product, best_score = candidates[0]
 
@@ -229,10 +205,9 @@ class VisionService:
             f"BEST MATCH: '{best_product.name}' (ID: {best_product.id}, score: {best_score:.1f}%)"
         )
 
-        # Log des autres candidats
         if len(candidates) > 1:
             logger.info("Other candidates:")
-            for prod, sc in candidates[1:4]:  # Top 3 suivants
+            for prod, sc in candidates[1:4]:
                 logger.info(f"     - '{prod.name}': {sc:.1f}%")
 
         return best_product, best_score
@@ -244,17 +219,6 @@ class VisionService:
         detected_category: str,
         detected_count: int,
     ) -> DetectedProductMatch:
-        """
-        Trouve la meilleure correspondance dans l'inventaire
-
-        Stratégie de matching:
-        1. Nom exact (insensible à la casse)
-        2. Similarité de chaîne (SequenceMatcher)
-        3. Catégorie + mots-clés
-        4. Si pas de match → retourne alternatives
-        """
-
-        # Récupérer inventaire actif
         inventory = (
             self.db.query(InventoryItem)
             .filter(InventoryItem.fridge_id == fridge_id, InventoryItem.quantity > 0)
@@ -269,7 +233,6 @@ class VisionService:
                 possible_matches=[],
             )
 
-        # Normalisation
         normalized_detected = self.normalize_product_name(detected_name)
 
         best_match = None
@@ -286,20 +249,17 @@ class VisionService:
 
             normalized_db = self.normalize_product_name(product.name)
 
-            # Score 1: Nom exact
             if normalized_detected == normalized_db:
                 score = 100.0
             else:
-                # Score 2: Similarité de chaîne
                 similarity = SequenceMatcher(
                     None, normalized_detected, normalized_db
                 ).ratio()
                 score = similarity * 100
 
-                # Bonus si même catégorie
                 if detected_category.lower() == product.category.lower():
                     score += 10
-                    score = min(score, 100)  # Cap à 100
+                    score = min(score, 100)
 
             match_info = {
                 "item_id": item.id,
@@ -313,11 +273,9 @@ class VisionService:
                 best_score = score
                 best_match = match_info
 
-            # Garder top 3 alternatives (score > 50%)
             if score >= 50:
                 alternatives.append(match_info)
 
-        # Trier alternatives par score décroissant
         alternatives.sort(key=lambda x: x["score"], reverse=True)
         alternatives = alternatives[:3]
 
@@ -330,7 +288,7 @@ class VisionService:
                 matched_product_name=best_match["product_name"],
                 available_quantity=best_match["available_quantity"],
                 match_score=best_score,
-                possible_matches=alternatives[1:],  # Exclure le best match
+                possible_matches=alternatives[1:],
             )
         else:
             return DetectedProductMatch(
@@ -343,10 +301,6 @@ class VisionService:
     def _find_existing_inventory_item(
         self, fridge_id: int, product_id: int, detected_name: str
     ) -> Optional[InventoryItem]:
-        """
-        SIMPLIFIÉ : Recherche par product_id uniquement
-        (Le matching est déjà fait dans _find_or_create_product)
-        """
         import logging
 
         logger = logging.getLogger(__name__)
@@ -372,10 +326,6 @@ class VisionService:
     async def analyze_and_update_inventory(
         self, image_file: UploadFile, fridge_id: int
     ) -> Dict[str, Any]:
-        """
-        Analyse l'image et met à jour l'inventaire
-        ✨ AMÉLIORATION : Notification groupée unique au lieu d'une par produit
-        """
         import logging
 
         logger = logging.getLogger(__name__)
@@ -386,14 +336,13 @@ class VisionService:
         items_updated = []
         needs_manual_entry = []
 
-        #  COLLECTER les infos pour notification groupée
         notification_products = []
 
         for detected in detected_products:
             result = self._process_detected_product(
                 detected=detected,
                 fridge_id=fridge_id,
-                send_notification=False,  #  Ne pas envoyer individuellement
+                send_notification=False,
             )
 
             if result["action"] == "added":
@@ -401,7 +350,6 @@ class VisionService:
             elif result["action"] == "updated":
                 items_updated.append(result["item"])
 
-            # Collecter les infos pour notification groupée
             notification_products.append(
                 {
                     "product_name": (
@@ -417,7 +365,6 @@ class VisionService:
                 }
             )
 
-        # Event groupé
         from app.models.event import Event
 
         event = Event(
@@ -433,7 +380,6 @@ class VisionService:
         )
         self.db.add(event)
 
-        # ENVOYER UNE SEULE NOTIFICATION GROUPÉE
         if notification_products:
             try:
                 from app.services.notification_service import NotificationService
@@ -466,8 +412,6 @@ class VisionService:
     async def _analyze_image_with_gemini(
         self, image_file: UploadFile
     ) -> List[DetectedProduct]:
-        """Appel à l'API Gemini pour analyse d'image"""
-
         output_schema = {
             "type": "object",
             "properties": {
@@ -540,23 +484,14 @@ class VisionService:
         self,
         detected: DetectedProduct,
         fridge_id: int,
-        send_notification: bool = True,  #  Nouveau paramètre
+        send_notification: bool = True,
     ) -> Dict[str, Any]:
-        """
-        MODIFIÉ : Traite un produit détecté avec option de désactiver la notification
-
-        Args:
-            detected: Produit détecté
-            fridge_id: ID du frigo
-            send_notification: Si False, ne pas envoyer de notification individuelle
-        """
         import logging
 
         logger = logging.getLogger(__name__)
 
         product = self._find_or_create_product(detected)
 
-        # Calculer la date d'expiration (logique existante)
         expiry_date = None
         if detected.expiry_date_text:
             expiry_date = self._parse_expiry_date(detected.expiry_date_text)
@@ -570,7 +505,6 @@ class VisionService:
             days = self._estimate_shelf_life(detected.product_name, detected.category)
             expiry_date = date.today() + timedelta(days=days)
 
-        # Calculer le statut de fraîcheur
         freshness_status = "fresh"
         if expiry_date:
             days_until_expiry = (expiry_date - date.today()).days
@@ -589,18 +523,15 @@ class VisionService:
 
         now = datetime.utcnow()
 
-        # Préparer le NotificationService (seulement si send_notification=True)
         if send_notification:
             from app.services.notification_service import NotificationService
 
             notification_service = NotificationService(self.db)
 
         if existing_item:
-            # MISE À JOUR d'un item existant
             existing_item.quantity += detected.count
             existing_item.last_seen_at = now
 
-            # Gestion de la date d'expiration (logique existante)
             existing_expiry = existing_item.expiry_date
             new_expiry = expiry_date
 
@@ -625,7 +556,6 @@ class VisionService:
                 logger.error(f"  Error comparing dates: {e}")
                 existing_item.expiry_date = new_expiry
 
-            # Event
             event = Event(
                 fridge_id=fridge_id,
                 inventory_item_id=existing_item.id,
@@ -640,7 +570,6 @@ class VisionService:
             )
             self.db.add(event)
 
-            # NOTIFICATION INDIVIDUELLE (seulement si demandé)
             if send_notification:
                 try:
                     notification_service.send_smart_inventory_notification(
@@ -668,7 +597,6 @@ class VisionService:
             }
 
         else:
-            # CRÉATION d'un nouvel item
             logger.info(f"Creating new item for product '{product.name}':")
 
             new_item = InventoryItem(
@@ -684,7 +612,6 @@ class VisionService:
             self.db.add(new_item)
             self.db.flush()
 
-            # Event
             event = Event(
                 fridge_id=fridge_id,
                 inventory_item_id=new_item.id,
@@ -699,7 +626,6 @@ class VisionService:
             )
             self.db.add(event)
 
-            # NOTIFICATION INDIVIDUELLE (seulement si demandé)
             if send_notification:
                 try:
                     notification_service.send_smart_inventory_notification(
@@ -726,32 +652,19 @@ class VisionService:
             }
 
     def _estimate_shelf_life(self, product_name: str, category: str) -> int:
-        """
-        Estime intelligemment la durée de conservation
-
-        Ordre de priorité:
-        1. Nom exact du produit
-        2. Mot-clé dans le nom
-        3. Catégorie
-        4. Défaut conservateur (7 jours)
-        """
         product_lower = product_name.lower()
         category_lower = category.lower()
 
-        # 1. Recherche exacte
         if product_lower in DEFAULT_SHELF_LIFE:
             return DEFAULT_SHELF_LIFE[product_lower]
 
-        # 2. Recherche par mot-clé
         for keyword, days in DEFAULT_SHELF_LIFE.items():
             if keyword in product_lower:
                 return days
 
-        # 3. Recherche par catégorie
         if category_lower in DEFAULT_SHELF_LIFE:
             return DEFAULT_SHELF_LIFE[category_lower]
 
-        # 4. Heuristiques par catégorie
         if "lait" in category_lower or "dairy" in category_lower:
             return 7
         elif "viande" in category_lower or "meat" in category_lower:
@@ -763,19 +676,11 @@ class VisionService:
         elif "poisson" in category_lower or "fish" in category_lower:
             return 2
         elif "congel" in category_lower or "frozen" in category_lower:
-            return 180  # 6 mois
+            return 180
 
-        # 5. Défaut sécuritaire
         return 7
 
     def _find_or_create_product(self, detected: DetectedProduct) -> Product:
-        """
-        REFONTE COMPLÈTE : Utilise le nouveau système de scoring
-
-        Seuil de matching : 70%
-        - >= 70% : Utilise le produit existant
-        - < 70% : Crée un nouveau produit
-        """
         import logging
 
         logger = logging.getLogger(__name__)
@@ -785,13 +690,11 @@ class VisionService:
         logger.info(f"🔍 PRODUCT MATCHING: '{detected_name}'")
         logger.info(f"{'=' * 60}")
 
-        # Recherche avec scoring
         best_product, best_score = self._find_best_product_match(
             detected_name, detected.category
         )
 
-        # DÉCISION basée sur le score
-        MATCH_THRESHOLD = 70.0  # Seuil configurable
+        MATCH_THRESHOLD = 70.0
 
         if best_product and best_score >= MATCH_THRESHOLD:
             logger.info(
@@ -799,7 +702,6 @@ class VisionService:
             )
             return best_product
 
-        # Pas de match suffisant → Créer nouveau produit
         logger.info(f"CREATING NEW PRODUCT: '{detected_name}'")
         if best_product:
             logger.info(
@@ -823,7 +725,6 @@ class VisionService:
         return new_product
 
     def _parse_expiry_date(self, date_text: str) -> Optional[date]:
-        """Parse une date de péremption depuis le texte OCR"""
         formats = ["%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%d.%m.%Y"]
 
         for fmt in formats:
@@ -838,7 +739,6 @@ class VisionService:
     def update_expiry_date_manually(
         self, item_id: int, expiry_date: date, fridge_id: int
     ) -> Optional[InventoryItem]:
-        """Mise à jour manuelle de la date de péremption"""
         item = (
             self.db.query(InventoryItem)
             .filter(

@@ -5,6 +5,9 @@ from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.core.config import settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
@@ -45,11 +48,6 @@ def create_refresh_token(data: dict) -> str:
     return encoded_jwt
 
 
-import logging
-
-logger = logging.getLogger(__name__)
-
-
 def decode_token(token: str) -> dict:
     try:
         logger.info(f"🔑 Decoding token: {token[:20]}...")
@@ -73,15 +71,14 @@ def decode_token(token: str) -> dict:
 async def get_current_user_id(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> int:
-    """Extraction de l'ID utilisateur depuis le token JWT"""
     token = credentials.credentials
-    logger.info(f"🔑 Received token: {token[:50]}...")
+    logger.info(f"Received token: {token[:50]}...")
 
     payload = decode_token(token)
     logger.info(f"Payload: {payload}")
 
     user_id_str = payload.get("sub")
-    logger.info(f"👤 User ID from payload: {user_id_str} (type: {type(user_id_str)})")
+    logger.info(f"User ID from payload: {user_id_str} (type: {type(user_id_str)})")
 
     if user_id_str is None:
         logger.error("No 'sub' in payload")

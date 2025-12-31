@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
+from typing import List, Dict, Any
 from datetime import datetime
 import json
 import logging
@@ -20,7 +19,6 @@ from app.models.product import Product
 from app.core.config import settings
 
 from google import genai
-from google.genai import types
 
 logger = logging.getLogger(__name__)
 
@@ -34,28 +32,6 @@ async def search_inventory_with_ai(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
-    """
-    Recherche intelligente dans l'inventaire avec IA (Gemini)
-
-    Cette route permet de poser des questions en langage naturel sur l'inventaire.
-
-    Exemples de requêtes supportées :
-    - "Combien d'œufs il me reste ?"
-    - "Est-ce que j'ai du lait ?"
-    - "Qu'est-ce qui expire bientôt ?"
-    - "Qu'est-ce que je peux cuisiner ce soir ?"
-    - "Qu'est-ce qu'il y a dans mon frigo ?"
-
-    Args:
-        fridge_id: ID du frigo
-        request: Requête contenant la question
-        current_user: Utilisateur authentifié
-        db: Session de base de données
-
-    Returns:
-        Dict avec query, response, timestamp, inventory_count
-    """
-
     fridge = (
         db.query(Fridge)
         .filter(Fridge.id == fridge_id, Fridge.user_id == current_user.id)
@@ -177,19 +153,6 @@ def get_search_history(
     db: Session = Depends(get_db),
     limit: int = 50,
 ) -> List[Dict[str, Any]]:
-    """
-    Récupère l'historique des recherches pour un frigo
-
-    Args:
-        fridge_id: ID du frigo
-        current_user: Utilisateur authentifié
-        db: Session de base de données
-        limit: Nombre maximum de résultats (défaut: 50)
-
-    Returns:
-        Liste des recherches précédentes (les plus récentes d'abord)
-    """
-
     fridge = (
         db.query(Fridge)
         .filter(Fridge.id == fridge_id, Fridge.user_id == current_user.id)
@@ -217,18 +180,6 @@ def clear_search_history(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Supprime tout l'historique de recherche pour un frigo
-
-    Args:
-        fridge_id: ID du frigo
-        current_user: Utilisateur authentifié
-        db: Session de base de données
-
-    Returns:
-        204 No Content
-    """
-
     fridge = (
         db.query(Fridge)
         .filter(Fridge.id == fridge_id, Fridge.user_id == current_user.id)

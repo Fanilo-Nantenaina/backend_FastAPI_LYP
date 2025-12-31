@@ -15,7 +15,7 @@ from app.schemas.recipe import (
     RecipeCreate,
     FeasibleRecipeResponse,
     SuggestedRecipeResponse,
-    AddToFavoritesRequest,  # NOUVEAU
+    AddToFavoritesRequest,
 )
 from app.services.recipe_service import RecipeService
 
@@ -26,19 +26,13 @@ logger = logging.getLogger(__name__)
 @router.get("", response_model=List[RecipeResponse])
 def list_recipes(
     db: Session = Depends(get_db),
-    fridge_id: int = Query(None, description="Filtrer par frigo"),  # AJOUT
+    fridge_id: int = Query(None, description="Filtrer par frigo"),
     difficulty: str = None,
     cuisine: str = None,
     limit: int = 50,
     sort_by: str = Query("date", regex="^(date|name|time)$"),
     order: str = Query("desc", regex="^(asc|desc)$"),
 ):
-    """Liste toutes les recettes disponibles
-
-    MODIFIÉ : Peut filtrer par fridge_id pour ne montrer que :
-    - Les recettes globales (fridge_id = NULL)
-    - Les recettes créées pour ce frigo spécifique
-    """
     query = db.query(Recipe)
 
     if fridge_id is not None:
@@ -73,10 +67,6 @@ def create_recipe(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Créer une nouvelle recette
-
-    MODIFIÉ : Supporte maintenant fridge_id optionnel
-    """
     recipe_service = RecipeService(db)
     recipe = recipe_service.create_recipe(request)
     return recipe
@@ -84,7 +74,6 @@ def create_recipe(
 
 @router.get("/{recipe_id}", response_model=RecipeResponse)
 def get_recipe(recipe_id: int, db: Session = Depends(get_db)):
-    """Récupérer une recette spécifique"""
     recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
@@ -94,26 +83,20 @@ def get_recipe(recipe_id: int, db: Session = Depends(get_db)):
 @router.post("/{recipe_id}/favorite", status_code=201)
 def add_to_favorites(
     recipe_id: int,
-    request: AddToFavoritesRequest,  # MODIFIÉ : Maintenant prend fridge_id
+    request: AddToFavoritesRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """CU6: Marquer une recette comme favorite (RG16)
-
-    MODIFIÉ : Nécessite maintenant un fridge_id
-    Les favoris sont par frigo, pas globaux
-    """
     recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
 
-    # MODIFIÉ : Vérifier si déjà favori POUR CE FRIGO
     existing = (
         db.query(RecipeFavorite)
         .filter(
             RecipeFavorite.user_id == current_user.id,
             RecipeFavorite.recipe_id == recipe_id,
-            RecipeFavorite.fridge_id == request.fridge_id,  # AJOUT
+            RecipeFavorite.fridge_id == request.fridge_id,
         )
         .first()
     )
@@ -122,11 +105,10 @@ def add_to_favorites(
             status_code=400, detail="Recipe already in favorites for this fridge"
         )
 
-    # MODIFIÉ : Créer avec fridge_id
     favorite = RecipeFavorite(
         user_id=current_user.id,
         recipe_id=recipe_id,
-        fridge_id=request.fridge_id,  # AJOUT
+        fridge_id=request.fridge_id,
     )
     db.add(favorite)
     db.commit()
@@ -136,20 +118,16 @@ def add_to_favorites(
 @router.delete("/{recipe_id}/favorite", status_code=204)
 def remove_from_favorites(
     recipe_id: int,
-    fridge_id: int = Query(..., description="ID du frigo"),  # AJOUT
+    fridge_id: int = Query(..., description="ID du frigo"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Retirer une recette des favoris
-
-    MODIFIÉ : Nécessite maintenant un fridge_id en query param
-    """
     favorite = (
         db.query(RecipeFavorite)
         .filter(
             RecipeFavorite.user_id == current_user.id,
             RecipeFavorite.recipe_id == recipe_id,
-            RecipeFavorite.fridge_id == fridge_id,  # AJOUT
+            RecipeFavorite.fridge_id == fridge_id,
         )
         .first()
     )
@@ -163,20 +141,16 @@ def remove_from_favorites(
 
 @router.get("/favorites/mine", response_model=List[RecipeResponse])
 def list_my_favorites(
-    fridge_id: int = Query(..., description="ID du frigo"),  # MODIFIÉ : Obligatoire
+    fridge_id: int = Query(..., description="ID du frigo"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """CU6: Consulter les recettes favorites
-
-    MODIFIÉ : Filtre par fridge_id (obligatoire)
-    """
     favorites = (
         db.query(Recipe)
         .join(RecipeFavorite)
         .filter(
             RecipeFavorite.user_id == current_user.id,
-            RecipeFavorite.fridge_id == fridge_id,  # AJOUT
+            RecipeFavorite.fridge_id == fridge_id,
         )
         .all()
     )
@@ -193,12 +167,6 @@ def list_feasible_recipes(
     sort_by: str = Query("match", regex="^(match|name|date|time)$"),
     order: str = Query("desc", regex="^(asc|desc)$"),
 ):
-    """CU6: Consulter les recettes faisables avec l'inventaire actuel
-
-    MODIFIÉ : Ne retourne que les recettes :
-    - Globales (fridge_id = NULL)
-    - Créées pour ce frigo spécifique
-    """
     from app.models.fridge import Fridge
 
     fridge = (
@@ -241,7 +209,7 @@ async def suggest_recipe_with_ai(
             fridge_id=fridge_id,
             user=current_user,
         )
-        # AJOUT : Inclure fridge_id dans la réponse
+
         suggested_recipe_dict = suggested_recipe.dict()
         suggested_recipe_dict["fridge_id"] = fridge_id
         return suggested_recipe_dict
@@ -258,11 +226,7 @@ async def save_suggested_recipe(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    V2 : Utilise matched_inventory_id fourni par l'IA pour garantir la cohérence
-    """
     try:
-        # Récupérer l'inventaire pour validation
         from app.models.inventory import InventoryItem
 
         inventory_items = (
@@ -274,7 +238,6 @@ async def save_suggested_recipe(
             .all()
         )
 
-        # Set des product_id valides dans l'inventaire
         valid_inventory_ids = {item.product_id for item in inventory_items}
 
         logger.info(f"Saving recipe for fridge {suggestion.fridge_id}")
@@ -307,7 +270,6 @@ async def save_suggested_recipe(
             product = None
             source = None
 
-            #  PRIORITÉ 1 : Utiliser matched_inventory_id si fourni et valide
             if matched_id is not None and matched_id in valid_inventory_ids:
                 product = db.query(Product).filter(Product.id == matched_id).first()
                 if product:
@@ -317,13 +279,11 @@ async def save_suggested_recipe(
                         f"   '{ingredient_name}' → Product ID {matched_id} ({product.name}) [FROM AI MAPPING]"
                     )
 
-            #  PRIORITÉ 2 : Chercher par nom exact dans tous les produits
             if not product:
                 from app.services.vision_service import VisionService
 
                 normalized = VisionService.normalize_product_name(ingredient_name)
 
-                # D'abord dans l'inventaire
                 for item in inventory_items:
                     inv_product = (
                         db.query(Product).filter(Product.id == item.product_id).first()
@@ -341,7 +301,6 @@ async def save_suggested_recipe(
                             )
                             break
 
-            #  PRIORITÉ 3 : Chercher par similarité élevée dans l'inventaire
             if not product and is_available:
                 from difflib import SequenceMatcher
 
@@ -357,7 +316,6 @@ async def save_suggested_recipe(
                             None, ingredient_name.lower(), inv_product.name.lower()
                         ).ratio()
 
-                        # Bonus si inclusion
                         if (
                             ingredient_name.lower() in inv_product.name.lower()
                             or inv_product.name.lower() in ingredient_name.lower()
@@ -368,9 +326,7 @@ async def save_suggested_recipe(
                             best_score = score
                             best_match = inv_product
 
-                if (
-                    best_match and best_score >= 0.4
-                ):  # Seuil bas car l'IA dit que c'est dispo
+                if best_match and best_score >= 0.4:
                     product = best_match
                     source = f"fuzzy_inventory({best_score:.0%})"
                     ingredients_matched += 1
@@ -378,7 +334,6 @@ async def save_suggested_recipe(
                         f"   '{ingredient_name}' → Product ID {product.id} ({product.name}) [FUZZY {best_score:.0%}]"
                     )
 
-            #  PRIORITÉ 4 : Chercher dans tous les produits existants
             if not product:
                 all_products = db.query(Product).all()
                 from difflib import SequenceMatcher
@@ -409,7 +364,6 @@ async def save_suggested_recipe(
                         f"   '{ingredient_name}' → Product ID {product.id} ({product.name}) [FUZZY GLOBAL]"
                     )
 
-            #  PRIORITÉ 5 : Créer nouveau produit uniquement en dernier recours
             if not product:
                 product = Product(
                     name=ingredient_name.capitalize(),
@@ -423,7 +377,6 @@ async def save_suggested_recipe(
                 ingredients_created += 1
                 logger.info(f" '{ingredient_name}' → NEW Product ID {product.id}")
 
-            # Créer l'ingrédient de recette
             recipe_ingredient = RecipeIngredient(
                 recipe_id=recipe.id,
                 product_id=product.id,
@@ -435,7 +388,6 @@ async def save_suggested_recipe(
         db.commit()
         db.refresh(recipe)
 
-        #  Vérification finale de cohérence
         saved_ids = {ing.product_id for ing in recipe.ingredients}
         matched_with_inventory = saved_ids & valid_inventory_ids
         final_match_pct = (
@@ -451,7 +403,6 @@ async def save_suggested_recipe(
             f"   Final match %: {final_match_pct:.1f}% (was {suggestion.match_percentage}%)"
         )
 
-        #  Alerte si grosse différence
         if abs(final_match_pct - suggestion.match_percentage) > 10:
             logger.warning(
                 f" MISMATCH ALERT: AI said {suggestion.match_percentage}% but actual is {final_match_pct:.1f}%"

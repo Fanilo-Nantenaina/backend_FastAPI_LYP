@@ -1,7 +1,3 @@
-"""
-Configuration complète du scheduler pour toutes les tâches périodiques
-"""
-
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -19,16 +15,6 @@ scheduler = BackgroundScheduler()
 
 
 def start_scheduler():
-    """
-    Démarre le scheduler avec toutes les tâches configurées
-
-    Tâches planifiées:
-    1. Vérification des alertes (toutes les heures)
-    2. Résumés quotidiens (tous les jours à 8h00)
-    3. Nettoyage des données (tous les jours à 3h00)
-    4. Vérification des objets perdus (toutes les 6 heures)
-    """
-
     if not settings.SCHEDULER_ENABLED:
         logger.warning("Scheduler is disabled in settings")
         return
@@ -58,7 +44,7 @@ def start_scheduler():
         logger.info(
             f"✓ Scheduled: Daily summaries (every day at {settings.DAILY_SUMMARY_TIME})"
         )
-    
+
     scheduler.add_job(
         cleanup_old_data,
         trigger=CronTrigger(hour=3, minute=0),
@@ -86,18 +72,12 @@ def start_scheduler():
 
 
 def stop_scheduler():
-    """Arrête proprement le scheduler"""
     logger.info("Stopping scheduler...")
     scheduler.shutdown(wait=True)
     logger.info("Scheduler stopped")
 
 
 def get_scheduler_status():
-    """
-    Retourne le statut du scheduler et de ses tâches
-
-    Utile pour le monitoring
-    """
     if not scheduler.running:
         return {"running": False, "jobs": []}
 
@@ -118,21 +98,13 @@ def get_scheduler_status():
 
 
 def trigger_job_manually(job_id: str):
-    """
-    Déclenche manuellement une tâche planifiée
-
-    Args:
-        job_id: 'check_alerts', 'daily_summaries', 'cleanup_data', 'check_lost_items'
-
-    Utile pour les tests ou les vérifications manuelles
-    """
     try:
         job = scheduler.get_job(job_id)
         if not job:
             raise ValueError(f"Job {job_id} not found")
 
         logger.info(f"🔧 Manually triggering job: {job_id}")
-        job.modify(next_run_time=None)  # Exécuter immédiatement
+        job.modify(next_run_time=None)
 
         return True
     except Exception as e:

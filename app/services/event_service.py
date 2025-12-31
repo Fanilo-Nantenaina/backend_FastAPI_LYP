@@ -12,11 +12,6 @@ logger = logging.getLogger(__name__)
 
 
 class EventService:
-    """
-    Service de gestion des événements (CU5)
-    Gère l'historique complet des actions
-    """
-
     def __init__(self, db: Session):
         self.db = db
 
@@ -28,19 +23,6 @@ class EventService:
         payload: Dict[str, Any],
         inventory_item_id: Optional[int] = None,
     ) -> Event:
-        """
-        RG5: Crée un nouvel événement
-
-        Types d'événements:
-        - ITEM_ADDED
-        - ITEM_REMOVED
-        - ITEM_CONSUMED
-        - ITEM_DETECTED (vision)
-        - QUANTITY_UPDATED
-        - EXPIRY_UPDATED
-        - ALERT_CREATED
-        - ALERT_RESOLVED
-        """
         event = Event(
             fridge_id=fridge_id,
             inventory_item_id=inventory_item_id,
@@ -64,7 +46,6 @@ class EventService:
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
     ) -> List[Event]:
-        """CU5: Récupère l'historique des événements avec filtres"""
         query = self.db.query(Event).filter(Event.fridge_id == fridge_id)
 
         if event_type:
@@ -79,16 +60,6 @@ class EventService:
         return query.order_by(Event.created_at.desc()).offset(offset).limit(limit).all()
 
     def get_event_statistics(self, fridge_id: int, days: int = 30) -> Dict[str, Any]:
-        """
-        Génère des statistiques complètes sur les événements du frigo
-
-        Args:
-            fridge_id: ID du frigo
-            days: Nombre de jours d'historique (1-365)
-
-        Returns:
-            Dictionnaire complet avec toutes les statistiques
-        """
         from sqlalchemy import func
 
         cutoff_date = datetime.utcnow() - timedelta(days=days)
@@ -139,7 +110,6 @@ class EventService:
     def _get_top_consumed_products(
         self, fridge_id: int, cutoff_date: datetime, limit: int = 10
     ) -> List[Dict[str, Any]]:
-        """Récupère les produits les plus consommés"""
         consumption_events = (
             self.db.query(Event)
             .filter(
@@ -178,9 +148,9 @@ class EventService:
                             }
 
                         product_consumption[product_name]["count"] += 1
-                        product_consumption[product_name][
-                            "total_quantity"
-                        ] += qty_consumed
+                        product_consumption[product_name]["total_quantity"] += (
+                            qty_consumed
+                        )
 
         top_consumed = sorted(
             product_consumption.items(), key=lambda x: x[1]["count"], reverse=True
@@ -228,7 +198,6 @@ class EventService:
     def _get_source_distribution(
         self, fridge_id: int, cutoff_date: datetime
     ) -> Dict[str, int]:
-        """Récupère la distribution des sources d'ajout"""
         source_stats = (
             self.db.query(Event.payload)
             .filter(
@@ -252,7 +221,6 @@ class EventService:
     def _get_daily_activity(
         self, fridge_id: int, cutoff_date: datetime
     ) -> List[Dict[str, Any]]:
-        """Récupère l'activité quotidienne"""
         events = (
             self.db.query(Event)
             .filter(Event.fridge_id == fridge_id, Event.created_at >= cutoff_date)
@@ -270,7 +238,6 @@ class EventService:
         )
 
     def get_item_history(self, inventory_item_id: int, limit: int = 20) -> List[Event]:
-        """Récupère l'historique complet d'un item spécifique"""
         return (
             self.db.query(Event)
             .filter(Event.inventory_item_id == inventory_item_id)
@@ -281,12 +248,6 @@ class EventService:
 
     @transactional
     def cleanup_old_events(self, days: int = 90) -> int:
-        """
-        Nettoie les anciens événements pour optimiser la DB
-
-        Returns:
-            Nombre d'événements supprimés
-        """
         cutoff_date = datetime.utcnow() - timedelta(days=days)
 
         old_events = self.db.query(Event).filter(Event.created_at < cutoff_date).all()

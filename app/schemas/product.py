@@ -6,7 +6,7 @@ class ProductCreate(BaseModel):
     barcode: Optional[str] = Field(None, min_length=8, max_length=20)
     name: str = Field(..., min_length=1, max_length=200)
     category: Optional[str] = Field(None, max_length=100)
-    shelf_life_days: Optional[int] = Field(None, ge=0, le=3650)  # Max 10 ans
+    shelf_life_days: Optional[int] = Field(None, ge=0, le=3650)
     default_unit: str = Field("piece", min_length=1, max_length=20)
     image_url: Optional[str] = Field(None, max_length=500)
     tags: Optional[List[str]] = None
@@ -14,21 +14,18 @@ class ProductCreate(BaseModel):
 
     @validator("barcode")
     def validate_barcode(cls, v):
-        """Valider le format du code-barres"""
         if v and not v.isdigit():
             raise ValueError("Le code-barres doit contenir uniquement des chiffres")
         return v
 
     @validator("name")
     def validate_name(cls, v):
-        """Le nom ne doit pas être vide ou uniquement des espaces"""
         if not v or not v.strip():
             raise ValueError("Le nom du produit ne peut pas être vide")
         return v.strip()
 
     @validator("tags", each_item=True)
     def validate_tags(cls, v):
-        """Valider chaque tag individuellement"""
         if not v or not v.strip():
             raise ValueError("Les tags ne peuvent pas être vides")
         if len(v) > 50:

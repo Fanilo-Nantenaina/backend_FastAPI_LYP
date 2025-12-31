@@ -2,17 +2,13 @@ from fastapi import APIRouter, File, UploadFile, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 from typing import Optional
 from app.core.database import get_db
-from app.core.dependencies import get_user_fridge
 from app.models.fridge import Fridge
 from app.services.vision_service import VisionService
 from app.schemas.vision import (
     VisionAnalysisResponse,
     ManualEntryRequest,
-    DetectedProductMatch,
     ConsumeAnalysisResponse,
 )
-from pydantic import BaseModel
-from typing import List, Dict, Any
 from datetime import datetime
 
 router = APIRouter(prefix="/fridges/{fridge_id}/vision", tags=["Vision AI"])
@@ -25,18 +21,6 @@ async def analyze_fridge_image(
     x_kiosk_id: Optional[str] = Header(None, alias="X-Kiosk-ID"),
     db: Session = Depends(get_db),
 ):
-    """
-
-    CU2: Enregistrer un Article via IA/Vision
-
-    Cette route analyse une image du frigo et :
-    1. Détecte les produits visibles
-    2. Estime les quantités
-    3. Lit les textes (OCR) pour identifier les produits emballés
-    4. Met à jour l'inventaire automatiquement
-    5. Demande confirmation manuelle si date de péremption non détectable
-    """
-
     if not x_kiosk_id:
         raise HTTPException(status_code=401, detail="X-Kiosk-ID header required")
 
@@ -45,7 +29,7 @@ async def analyze_fridge_image(
         .filter(
             Fridge.id == fridge_id,
             Fridge.kiosk_id == x_kiosk_id,
-            Fridge.is_paired == True,
+            Fridge.is_paired,
         )
         .first()
     )
@@ -74,14 +58,6 @@ async def manual_expiry_entry(
     x_kiosk_id: Optional[str] = Header(None, alias="X-Kiosk-ID"),
     db: Session = Depends(get_db),
 ):
-    """
-
-    Entrée manuelle de la date de péremption si non détectée par l'IA
-
-    L'utilisateur reçoit une notification si l'IA n'a pas pu détecter
-    la date de péremption, et peut la saisir via cette route.
-    """
-
     if not x_kiosk_id:
         raise HTTPException(status_code=401, detail="X-Kiosk-ID header required")
 
@@ -90,7 +66,7 @@ async def manual_expiry_entry(
         .filter(
             Fridge.id == fridge_id,
             Fridge.kiosk_id == x_kiosk_id,
-            Fridge.is_paired == True,
+            Fridge.is_paired,
         )
         .first()
     )
@@ -126,16 +102,6 @@ async def analyze_for_consumption(
     x_kiosk_id: Optional[str] = Header(None, alias="X-Kiosk-ID"),
     db: Session = Depends(get_db),
 ):
-    """
-    NOUVEAU : Analyse d'image pour SORTIE de produits
-
-    Flow:
-    1. Détecte produits via Gemini (comme /analyze)
-    2. Pour chaque produit détecté → cherche correspondance dans inventaire
-    3. Retourne liste avec matching automatique + alternatives
-    4. Frontend confirme → route PATCH /consume-batch fait la soustraction
-    """
-
     if not x_kiosk_id:
         raise HTTPException(status_code=401, detail="X-Kiosk-ID required")
 
@@ -144,7 +110,7 @@ async def analyze_for_consumption(
         .filter(
             Fridge.id == fridge_id,
             Fridge.kiosk_id == x_kiosk_id,
-            Fridge.is_paired == True,
+            Fridge.is_paired,
         )
         .first()
     )

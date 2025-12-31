@@ -1,4 +1,4 @@
-# Dans models/shopping_list.py - Ajoutez le champ recipe_id
+                                                           
 
 from sqlalchemy import Column, Integer, Float, String, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
@@ -7,11 +7,6 @@ from app.core.database import Base
 
 
 class ShoppingList(Base):
-    """
-    Modèle ShoppingList - Listes de courses
-    AMÉLIORÉ : Ajout de la relation avec Recipe
-    """
-
     __tablename__ = "shopping_lists"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -22,7 +17,7 @@ class ShoppingList(Base):
         Integer, ForeignKey("fridges.id", ondelete="CASCADE"), nullable=False
     )
 
-    # NOUVEAU : Relation optionnelle avec une recette
+                                                     
     recipe_id = Column(
         Integer, ForeignKey("recipes.id", ondelete="SET NULL"), nullable=True
     )
@@ -30,16 +25,16 @@ class ShoppingList(Base):
     name = Column(String, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
-    generated_by = Column(String)  # 'manual', 'auto_recipe', 'ai_suggestion'
+    generated_by = Column(String)                                            
 
-    # NOUVEAU : Statut de la liste
-    status = Column(String, default="active")  # 'active', 'completed', 'cancelled'
+                                  
+    status = Column(String, default="active")                                      
     completed_at = Column(DateTime, nullable=True)
 
-    # Relations
+               
     user = relationship("User", back_populates="shopping_lists")
     fridge = relationship("Fridge", back_populates="shopping_lists")
-    recipe = relationship("Recipe", back_populates="shopping_lists")  # NOUVEAU
+    recipe = relationship("Recipe", back_populates="shopping_lists")           
     items = relationship(
         "ShoppingListItem", back_populates="shopping_list", cascade="all, delete-orphan"
     )
@@ -49,8 +44,6 @@ class ShoppingList(Base):
 
 
 class ShoppingListItem(Base):
-    """Modèle ShoppingListItem - Articles d'une liste de courses"""
-
     __tablename__ = "shopping_list_items"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -63,9 +56,9 @@ class ShoppingListItem(Base):
 
     quantity = Column(Float)
     unit = Column(String)
-    status = Column(String, default="pending")  # pending, purchased, cancelled
+    status = Column(String, default="pending")                                 
 
-    # Relations
+               
     shopping_list = relationship("ShoppingList", back_populates="items")
     product = relationship("Product", back_populates="shopping_list_items")
 

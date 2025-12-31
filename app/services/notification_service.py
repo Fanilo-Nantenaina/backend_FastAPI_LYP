@@ -16,27 +16,12 @@ logger = logging.getLogger(__name__)
 
 
 class NotificationService:
-    """
-    Service de notifications multi-canal : Email, Push, SMS
-    Gère l'envoi des alertes aux utilisateurs
-    """
-
     def __init__(self, db: Session):
         self.db = db
 
     def send_email_notification(
         self, user_email: str, subject: str, body: str, html_body: Optional[str] = None
     ) -> bool:
-        """
-        Envoie une notification par email
-
-        Configuration nécessaire dans .env :
-        - SMTP_HOST=smtp.gmail.com
-        - SMTP_PORT=587
-        - SMTP_USER=your-email@gmail.com
-        - SMTP_PASSWORD=your-app-password
-        - SMTP_FROM_EMAIL=noreply@smartfridge.com
-        """
         try:
             smtp_host = getattr(settings, "SMTP_HOST", "smtp.gmail.com")
             smtp_port = getattr(settings, "SMTP_PORT", 587)
@@ -73,7 +58,6 @@ class NotificationService:
             return False
 
     def send_alert_email(self, alert: Alert, user: User) -> bool:
-        """Envoie un email pour une alerte spécifique"""
         subject = self._get_alert_email_subject(alert)
         body = self._get_alert_email_body(alert)
         html_body = self._get_alert_email_html(alert)
@@ -83,7 +67,6 @@ class NotificationService:
         )
 
     def _get_alert_email_subject(self, alert: Alert) -> str:
-        """Génère le sujet de l'email selon le type d'alerte"""
         subjects = {
             "EXPIRY_SOON": "Produits à consommer rapidement",
             "EXPIRED": "Produits périmés dans votre frigo",
@@ -93,25 +76,23 @@ class NotificationService:
         return subjects.get(alert.type, "📬 Alerte Smart Fridge")
 
     def _get_alert_email_body(self, alert: Alert) -> str:
-        """Génère le corps texte de l'email"""
         return f"""
-Bonjour,
+            Bonjour,
 
-Vous avez une nouvelle alerte concernant votre réfrigérateur :
+            Vous avez une nouvelle alerte concernant votre réfrigérateur :
 
-{alert.message}
+            {alert.message}
 
-Type d'alerte : {alert.type}
-Date : {alert.created_at.strftime("%d/%m/%Y %H:%M")}
+            Type d'alerte : {alert.type}
+            Date : {alert.created_at.strftime("%d/%m/%Y %H:%M")}
 
-Connectez-vous à votre application Smart Fridge pour plus de détails.
+            Connectez-vous à votre application Smart Fridge pour plus de détails.
 
-Cordialement,
-L'équipe Smart Fridge
+            Cordialement,
+            L'équipe Smart Fridge
         """
 
     def _get_alert_email_html(self, alert: Alert) -> str:
-        """Génère le corps HTML de l'email"""
         icon_map = {
             "EXPIRY_SOON": "⚠️",
             "EXPIRED": "🚫",
@@ -121,52 +102,51 @@ L'équipe Smart Fridge
         icon = icon_map.get(alert.type, "📬")
 
         return f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <style>
-        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-        .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
-        .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
-        .alert-box {{ background: white; padding: 20px; border-left: 4px solid #667eea; 
-                    margin: 20px 0; border-radius: 5px; }}
-        .footer {{ text-align: center; margin-top: 20px; font-size: 12px; color: #666; }}
-        .button {{ background: #667eea; color: white; padding: 12px 30px; 
-                text-decoration: none; border-radius: 5px; display: inline-block; 
-                margin-top: 20px; }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>{icon} Smart Fridge</h1>
-            <p>Nouvelle alerte de votre réfrigérateur</p>
-        </div>
-        <div class="content">
-            <div class="alert-box">
-                <h2 style="margin-top: 0;">{alert.type.replace("_", " ").title()}</h2>
-                <p style="font-size: 16px;">{alert.message}</p>
-                <p style="color: #666; font-size: 14px;">
-                    Date : {alert.created_at.strftime("%d/%m/%Y à %H:%M")}
-                </p>
-            </div>
-            <p>Consultez votre application pour gérer cette alerte et voir les détails complets.</p>
-            <a href="https://smartfridge.app/alerts/{alert.id}" class="button">
-                Voir l'alerte
-            </a>
-        </div>
-        <div class="footer">
-            <p>© 2025 Smart Fridge - Votre cuisine intelligente</p>
-        </div>
-    </div>
-</body>
-</html>
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                    .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                    .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                            color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
+                    .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
+                    .alert-box {{ background: white; padding: 20px; border-left: 4px solid #667eea; 
+                                margin: 20px 0; border-radius: 5px; }}
+                    .footer {{ text-align: center; margin-top: 20px; font-size: 12px; color: #666; }}
+                    .button {{ background: #667eea; color: white; padding: 12px 30px; 
+                            text-decoration: none; border-radius: 5px; display: inline-block; 
+                            margin-top: 20px; }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h1>{icon} Smart Fridge</h1>
+                        <p>Nouvelle alerte de votre réfrigérateur</p>
+                    </div>
+                    <div class="content">
+                        <div class="alert-box">
+                            <h2 style="margin-top: 0;">{alert.type.replace("_", " ").title()}</h2>
+                            <p style="font-size: 16px;">{alert.message}</p>
+                            <p style="color: #666; font-size: 14px;">
+                                Date : {alert.created_at.strftime("%d/%m/%Y à %H:%M")}
+                            </p>
+                        </div>
+                        <p>Consultez votre application pour gérer cette alerte et voir les détails complets.</p>
+                        <a href="https://smartfridge.app/alerts/{alert.id}" class="button">
+                            Voir l'alerte
+                        </a>
+                    </div>
+                    <div class="footer">
+                        <p>© 2025 Smart Fridge - Votre cuisine intelligente</p>
+                    </div>
+                </div>
+            </body>
+            </html>
         """
 
     def send_daily_summary_email(self, user: User, fridge_id: int) -> bool:
-        """Envoie un résumé quotidien de l'état du frigo"""
         fridge = self.db.query(Fridge).filter(Fridge.id == fridge_id).first()
         if not fridge:
             return False
@@ -186,18 +166,18 @@ L'équipe Smart Fridge
         subject = f"Résumé quotidien - {fridge.name}"
 
         body = f"""
-Bonjour {user.name or "cher utilisateur"},
+            Bonjour {user.name or "cher utilisateur"},
 
-Voici le résumé quotidien de votre frigo "{fridge.name}" :
+            Voici le résumé quotidien de votre frigo "{fridge.name}" :
 
-        - Articles en stock : {inventory_count}
-        - Alertes en attente : {len(pending_alerts)}
+                    - Articles en stock : {inventory_count}
+                    - Alertes en attente : {len(pending_alerts)}
 
-{"=" * 50}
-ALERTES EN ATTENTE :
-{"=" * 50}
+            {"=" * 50}
+            ALERTES EN ATTENTE :
+            {"=" * 50}
 
-"""
+        """
 
         if pending_alerts:
             for alert in pending_alerts:
@@ -220,12 +200,6 @@ ALERTES EN ATTENTE :
         )
 
     def _sanitize_fcm_data(self, data: Optional[Dict[str, Any]]) -> Dict[str, str]:
-        """
-        Convertit toutes les valeurs en strings pour FCM
-
-        FCM n'accepte que des strings dans le champ 'data'.
-        Convertit : int → str, bool → "true"/"false", None → ""
-        """
         if not data:
             return {}
 
@@ -243,24 +217,10 @@ ALERTES EN ATTENTE :
     def send_push_notification(
         self, user_id: int, title: str, body: str, data: Optional[Dict[str, Any]] = None
     ) -> bool:
-        """
-        Envoie une notification push via Firebase Cloud Messaging (FCM)
-        VERSION MODERNE avec firebase-admin SDK
-
-        Args:
-            user_id: ID de l'utilisateur
-            title: Titre de la notification
-            body: Corps du message
-            data: Données supplémentaires (seront converties en strings)
-
-        Returns:
-            True si au moins une notification a été envoyée avec succès
-        """
         try:
             import firebase_admin
             from firebase_admin import credentials, messaging
 
-            # Initialiser Firebase Admin SDK (une seule fois)
             if not firebase_admin._apps:
                 cred = credentials.Certificate(
                     "smart-fridge-357b0-firebase-adminsdk-fbsvc-e5dbd0f2cb.json"
@@ -268,10 +228,9 @@ ALERTES EN ATTENTE :
                 firebase_admin.initialize_app(cred)
                 logger.info("Firebase Admin SDK initialized")
 
-            # Récupérer les tokens FCM depuis les frigos de l'utilisateur
             fridges = (
                 self.db.query(Fridge)
-                .filter(Fridge.user_id == user_id, Fridge.is_paired == True)
+                .filter(Fridge.user_id == user_id, Fridge.is_paired)
                 .all()
             )
 
@@ -279,12 +238,10 @@ ALERTES EN ATTENTE :
                 logger.info(f"No paired fridges found for user {user_id}")
                 return False
 
-            # Sanitizer les données (convertir en strings)
             safe_data = self._sanitize_fcm_data(data)
 
             success_count = 0
 
-            # Parcourir les frigos pour envoyer aux tokens FCM
             for fridge in fridges:
                 fcm_tokens = []
 
@@ -298,20 +255,19 @@ ALERTES EN ATTENTE :
                     if not fcm_token:
                         continue
 
-                    # Créer le message Firebase
                     message = messaging.Message(
                         notification=messaging.Notification(
                             title=title,
                             body=body,
                         ),
-                        data=safe_data,  # Toutes les valeurs sont des strings
+                        data=safe_data,
                         token=fcm_token,
                         android=messaging.AndroidConfig(
                             priority="high",
                             notification=messaging.AndroidNotification(
                                 sound="default",
                                 channel_id="smart_fridge_alerts",
-                                color="#3B82F6",  # Couleur bleue
+                                color="#3B82F6",
                             ),
                         ),
                         apns=messaging.APNSConfig(
@@ -325,7 +281,6 @@ ALERTES EN ATTENTE :
                         ),
                     )
 
-                    # Envoyer via Firebase Admin SDK
                     try:
                         response = messaging.send(message)
                         success_count += 1
@@ -337,7 +292,7 @@ ALERTES EN ATTENTE :
                             f"Token invalid/expired for fridge {fridge.id}, "
                             f"removing from database"
                         )
-                        # Supprimer le token invalide
+
                         if "fcm_tokens" in fridge.kiosk_metadata:
                             fridge.kiosk_metadata["fcm_tokens"].remove(fcm_token)
                             from sqlalchemy.orm.attributes import flag_modified
@@ -355,7 +310,6 @@ ALERTES EN ATTENTE :
             return False
 
     def send_alert_push(self, alert: Alert, user_id: int) -> bool:
-        """Envoie une notification push pour une alerte"""
         title_map = {
             "EXPIRY_SOON": "Produits à consommer",
             "EXPIRED": "Produits périmés",
@@ -378,14 +332,6 @@ ALERTES EN ATTENTE :
         )
 
     def send_sms_notification(self, phone_number: str, message: str) -> bool:
-        """
-        Envoie une notification par SMS via Twilio
-
-        Configuration nécessaire dans .env :
-        - TWILIO_ACCOUNT_SID=your-account-sid
-        - TWILIO_AUTH_TOKEN=your-auth-token
-        - TWILIO_PHONE_NUMBER=your-twilio-number
-        """
         try:
             from twilio.rest import Client
 
@@ -411,7 +357,6 @@ ALERTES EN ATTENTE :
             return False
 
     def send_alert_sms(self, alert: Alert, user: User) -> bool:
-        """Envoie un SMS pour une alerte critique"""
         if not user.prefs or "phone_number" not in user.prefs:
             logger.info(f"No phone number for user {user.id}")
             return False
@@ -425,17 +370,6 @@ ALERTES EN ATTENTE :
     def notify_alert(
         self, alert: Alert, user: User, channels: List[str] = ["push", "email"]
     ) -> Dict[str, bool]:
-        """
-        Envoie une notification sur plusieurs canaux
-
-        Args:
-            alert: L'alerte à notifier
-            user: L'utilisateur à notifier
-            channels: Liste des canaux ('push', 'email', 'sms')
-
-        Returns:
-            Dict avec le statut de chaque canal
-        """
         results = {}
 
         if "email" in channels:
@@ -450,9 +384,6 @@ ALERTES EN ATTENTE :
         return results
 
     def notify_expiry_batch(self, fridge_id: int, user: User) -> bool:
-        """
-        Envoie une notification groupée pour plusieurs produits proches de l'expiration
-        """
         from datetime import date, timedelta
 
         warning_date = date.today() + timedelta(days=3)
@@ -480,16 +411,16 @@ ALERTES EN ATTENTE :
 
         subject = f"{len(expiring_items)} produits à consommer rapidement"
         body = f"""
-Bonjour {user.name or "cher utilisateur"},
+            Bonjour {user.name or "cher utilisateur"},
 
-Vous avez {len(expiring_items)} produit(s) qui vont bientôt expirer :
+            Vous avez {len(expiring_items)} produit(s) qui vont bientôt expirer :
 
-{items_list}
+            {items_list}
 
-Pensez à les consommer avant leur date de péremption !
+            Pensez à les consommer avant leur date de péremption !
 
-Cordialement,
-L'équipe Smart Fridge
+            Cordialement,
+            L'équipe Smart Fridge
         """
 
         return self.send_email_notification(
@@ -497,19 +428,6 @@ L'équipe Smart Fridge
         )
 
     def register_fcm_token(self, fridge_id: int, fcm_token: str, user_id: int) -> bool:
-        """
-        NOUVEAU : Enregistre un token FCM pour un frigo
-
-        Appelé par l'app mobile après le pairing pour enregistrer son token FCM
-
-        Args:
-            fridge_id: ID du frigo
-            fcm_token: Token FCM de l'appareil mobile
-            user_id: ID de l'utilisateur (pour vérifier la propriété)
-
-        Returns:
-            True si enregistré avec succès
-        """
         try:
             fridge = (
                 self.db.query(Fridge)
@@ -521,11 +439,9 @@ L'équipe Smart Fridge
                 logger.warning(f"Fridge {fridge_id} not found for user {user_id}")
                 return False
 
-            # Initialiser kiosk_metadata si nécessaire
             if not fridge.kiosk_metadata:
                 fridge.kiosk_metadata = {}
 
-            # Ajouter le token à la liste (éviter les doublons)
             if "fcm_tokens" not in fridge.kiosk_metadata:
                 fridge.kiosk_metadata["fcm_tokens"] = []
 
@@ -544,19 +460,6 @@ L'équipe Smart Fridge
     def unregister_fcm_token(
         self, fridge_id: int, fcm_token: str, user_id: int
     ) -> bool:
-        """
-        NOUVEAU : Supprime un token FCM pour un frigo
-
-        Appelé quand l'utilisateur se déconnecte ou désinstalle l'app
-
-        Args:
-            fridge_id: ID du frigo
-            fcm_token: Token FCM à supprimer
-            user_id: ID de l'utilisateur (pour vérifier la propriété)
-
-        Returns:
-            True si supprimé avec succès
-        """
         try:
             fridge = (
                 self.db.query(Fridge)
@@ -589,20 +492,6 @@ L'équipe Smart Fridge
         unit: str = None,
         source: str = "manual",
     ) -> bool:
-        """
-        NOUVEAU : Envoie une notification pour une action d'inventaire
-
-        Args:
-            fridge_id: ID du frigo
-            action: "added", "updated", "consumed", "removed"
-            product_name: Nom du produit
-            quantity: Quantité (optionnel)
-            unit: Unité (optionnel)
-            source: "manual", "vision", "scan"
-
-        Returns:
-            True si envoyé avec succès
-        """
         try:
             fridge = self.db.query(Fridge).filter(Fridge.id == fridge_id).first()
             if not fridge or not fridge.user_id:
@@ -655,13 +544,6 @@ L'équipe Smart Fridge
         expiry_date=None,
         source: str = "manual",
     ) -> bool:
-        """
-        Notifications intelligentes et contextuelles
-
-        Génère des messages humains et engageants selon le contexte
-        """
-        from datetime import date
-
         fridge = self.db.query(Fridge).filter(Fridge.id == fridge_id).first()
         if not fridge or not fridge.user_id:
             logger.warning(f"Fridge {fridge_id} not found or no user")
@@ -703,16 +585,6 @@ L'équipe Smart Fridge
         expiry_date=None,
         source: str = "manual",
     ) -> tuple:
-        """
-        INTELLIGENCE ARTIFICIELLE CONTEXTUELLE
-
-        Génère des messages humains selon le contexte complet
-
-        Returns:
-            (title, body, emoji)
-        """
-        from datetime import date
-
         if action == "consumed":
             if freshness_status == "expired":
                 title = "Attention à la fraîcheur"
@@ -748,7 +620,7 @@ L'équipe Smart Fridge
                             body += f"Il reste {remaining_quantity} {unit} (expire dans {days_left} jour{'s' if days_left > 1 else ''}). Pensez à tout finir ! 🍽️"
                         else:
                             body += "Plus de gaspillage possible ! ✨"
-                    except:
+                    except Exception:
                         pass
 
                 return (title, body, "⏰")
@@ -792,7 +664,7 @@ L'équipe Smart Fridge
                         exp_date = expiry_date
                     days_left = (exp_date - dt.today()).days
                     body += f". Expire dans {days_left} jour{'s' if days_left > 1 else ''}, à consommer rapidement !"
-                except:
+                except Exception:
                     pass
 
             return (title, body, "")
@@ -839,25 +711,6 @@ L'équipe Smart Fridge
         scan_type: str,
         products: List[Dict[str, Any]],
     ) -> bool:
-        """
-        NOUVEAU : Notification groupée pour scan d'image batch
-
-        Envoie UNE SEULE notification avec résumé de tous les produits
-
-        Args:
-            fridge_id: ID du frigo
-            scan_type: "add" (ajout) ou "consume" (sortie)
-            products: Liste de dicts avec :
-                - product_name: str
-                - action: "added", "updated", "consumed"
-                - quantity: float
-                - unit: str
-                - freshness_status: str (optionnel)
-                - expiry_date: date (optionnel)
-
-        Returns:
-            True si envoyé avec succès
-        """
         import logging
 
         logger = logging.getLogger(__name__)
@@ -898,7 +751,7 @@ L'équipe Smart Fridge
                     f"({scan_type}) to fridge {fridge_id}"
                 )
             else:
-                logger.warning(f" Failed to send batch notification")
+                logger.warning(" Failed to send batch notification")
 
             return success
 
@@ -911,16 +764,6 @@ L'équipe Smart Fridge
         scan_type: str,
         products: List[Dict[str, Any]],
     ) -> tuple:
-        """
-        GÉNÉRATEUR DE MESSAGE GROUPÉ INTELLIGENT
-
-        Crée un message concis mais informatif pour plusieurs produits
-
-        Returns:
-            (title, body, emoji)
-        """
-        from datetime import date
-
         total_products = len(products)
 
         if scan_type == "add":
