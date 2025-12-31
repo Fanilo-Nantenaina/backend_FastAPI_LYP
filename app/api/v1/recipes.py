@@ -228,6 +228,14 @@ async def save_suggested_recipe(
 ):
     try:
         from app.models.inventory import InventoryItem
+        from difflib import SequenceMatcher
+        import unicodedata
+
+        def normalize(s):
+            s = s.lower().strip()
+            s = unicodedata.normalize("NFD", s)
+            s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+            return s
 
         inventory_items = (
             db.query(InventoryItem)
@@ -240,8 +248,15 @@ async def save_suggested_recipe(
 
         valid_inventory_ids = {item.product_id for item in inventory_items}
 
-        logger.info(f"Saving recipe for fridge {suggestion.fridge_id}")
-        logger.info(f"Valid inventory IDs: {valid_inventory_ids}")
+        inventory_products = {}
+        for item in inventory_items:
+            product = db.query(Product).filter(Product.id == item.product_id).first()
+            if product:
+                inventory_products[item.product_id] = product
+
+        print(f"=== SAVING RECIPE FOR FRIDGE {suggestion.fridge_id} ===")
+        print(f"Inventory product IDs: {valid_inventory_ids}")
+        print(f"AI match_percentage: {suggestion.match_percentage}%")
 
         recipe = Recipe(
             title=suggestion.title,
@@ -259,160 +274,141 @@ async def save_suggested_recipe(
         db.add(recipe)
         db.flush()
 
-        ingredients_matched = 0
-        ingredients_created = 0
-
         for ingredient_data in suggestion.ingredients:
-            ingredient_name = ingredient_data.get("name", "").strip()
-            matched_id = ingredient_data.get("matched_inventory_id")
-            is_available = ingredient_data.get("is_available", False)
+            if isinstance(ingredient_data, dict):
+                ingredient_name = ingredient_data.get("name", "").strip()
+                matched_id = ingredient_data.get("matched_inventory_id")
+                is_available = ingredient_data.get("is_available", False)
+                ing_quantity = ingredient_data.get("quantity", 1)
+                ing_unit = ingredient_data.get("unit", "piece")
+            else:
+                ingredient_name = (
+                    ingredient_data.name.strip() if ingredient_data.name else ""
+                )
+                matched_id = ingredient_data.matched_inventory_id
+                is_available = ingredient_data.is_available
+                ing_quantity = ingredient_data.quantity or 1
+                ing_unit = ingredient_data.unit or "piece"
 
             product = None
-            source = None
+            ing_normalized = normalize(ingredient_name)
+
+            print(
+                f"Processing: '{ingredient_name}' matched_id={matched_id} is_available={is_available}"
+            )
 
             if matched_id is not None and matched_id in valid_inventory_ids:
-                product = db.query(Product).filter(Product.id == matched_id).first()
-                if product:
-                    source = f"matched_inventory_id={matched_id}"
-                    ingredients_matched += 1
-                    logger.info(
-                        f"   '{ingredient_name}' → Product ID {matched_id} ({product.name}) [FROM AI MAPPING]"
-                    )
+                inv_product = inventory_products.get(matched_id)
+                if inv_product:
+                    inv_normalized = normalize(inv_product.name)
 
-            if not product:
-                from app.services.vision_service import VisionService
-
-                normalized = VisionService.normalize_product_name(ingredient_name)
-
-                for item in inventory_items:
-                    inv_product = (
-                        db.query(Product).filter(Product.id == item.product_id).first()
-                    )
-                    if inv_product:
-                        inv_normalized = VisionService.normalize_product_name(
-                            inv_product.name
+                    is_valid = (
+                        ing_normalized == inv_normalized
+                        or (
+                            len(ing_normalized) >= 3
+                            and ing_normalized in inv_normalized
                         )
-                        if normalized == inv_normalized:
-                            product = inv_product
-                            source = "exact_match_inventory"
-                            ingredients_matched += 1
-                            logger.info(
-                                f"   '{ingredient_name}' → Product ID {product.id} ({product.name}) [EXACT MATCH]"
-                            )
-                            break
-
-            if not product and is_available:
-                from difflib import SequenceMatcher
-
-                best_match = None
-                best_score = 0.0
-
-                for item in inventory_items:
-                    inv_product = (
-                        db.query(Product).filter(Product.id == item.product_id).first()
+                        or (
+                            len(inv_normalized) >= 3
+                            and inv_normalized in ing_normalized
+                        )
+                        or SequenceMatcher(None, ing_normalized, inv_normalized).ratio()
+                        >= 0.7
                     )
-                    if inv_product:
-                        score = SequenceMatcher(
-                            None, ingredient_name.lower(), inv_product.name.lower()
-                        ).ratio()
 
-                        if (
-                            ingredient_name.lower() in inv_product.name.lower()
-                            or inv_product.name.lower() in ingredient_name.lower()
-                        ):
-                            score = max(score, 0.75)
-
-                        if score > best_score:
-                            best_score = score
-                            best_match = inv_product
-
-                if best_match and best_score >= 0.4:
-                    product = best_match
-                    source = f"fuzzy_inventory({best_score:.0%})"
-                    ingredients_matched += 1
-                    logger.info(
-                        f"   '{ingredient_name}' → Product ID {product.id} ({product.name}) [FUZZY {best_score:.0%}]"
-                    )
+                    if is_valid:
+                        product = inv_product
+                        print(
+                            f"  -> matched_inventory_id OK: {matched_id} ({product.name})"
+                        )
+                    else:
+                        print(
+                            f"  -> REJECTED matched_id={matched_id}: '{ingredient_name}' != '{inv_product.name}'"
+                        )
 
             if not product:
-                all_products = db.query(Product).all()
-                from difflib import SequenceMatcher
+                for inv_product_id, inv_product in inventory_products.items():
+                    inv_normalized = normalize(inv_product.name)
 
-                best_match = None
-                best_score = 0.0
-
-                for prod in all_products:
-                    if prod.name.lower() == ingredient_name.lower():
-                        product = prod
-                        source = "exact_match_global"
-                        logger.info(
-                            f"   '{ingredient_name}' → Product ID {product.id} [EXACT GLOBAL]"
+                    if ing_normalized == inv_normalized:
+                        product = inv_product
+                        print(
+                            f"  -> Exact match: {inv_product.id} ({inv_product.name})"
                         )
                         break
 
-                    score = SequenceMatcher(
-                        None, ingredient_name.lower(), prod.name.lower()
-                    ).ratio()
-                    if score > best_score and score >= 0.7:
-                        best_score = score
-                        best_match = prod
-
-                if not product and best_match:
-                    product = best_match
-                    source = f"fuzzy_global({best_score:.0%})"
-                    logger.info(
-                        f"   '{ingredient_name}' → Product ID {product.id} ({product.name}) [FUZZY GLOBAL]"
-                    )
+                    if (
+                        len(ing_normalized) >= 3 and ing_normalized in inv_normalized
+                    ) or (
+                        len(inv_normalized) >= 3 and inv_normalized in ing_normalized
+                    ):
+                        product = inv_product
+                        print(
+                            f"  -> Substring match: {inv_product.id} ({inv_product.name})"
+                        )
+                        break
 
             if not product:
-                product = Product(
-                    name=ingredient_name.capitalize(),
-                    category="Divers",
-                    default_unit=ingredient_data.get("unit", "pièce"),
-                    shelf_life_days=7,
+                existing = (
+                    db.query(Product)
+                    .filter(Product.name.ilike(ingredient_name))
+                    .first()
                 )
-                db.add(product)
-                db.flush()
-                source = "created_new"
-                ingredients_created += 1
-                logger.info(f" '{ingredient_name}' → NEW Product ID {product.id}")
+
+                if existing:
+                    product = existing
+                    print(f"  -> Existing product: {existing.id} ({existing.name})")
+                else:
+                    product = Product(
+                        name=ingredient_name.capitalize(),
+                        category="Divers",
+                        default_unit=ing_unit,
+                        shelf_life_days=7,
+                    )
+                    db.add(product)
+                    db.flush()
+                    print(f"  -> Created new: {product.id} ({product.name})")
 
             recipe_ingredient = RecipeIngredient(
                 recipe_id=recipe.id,
                 product_id=product.id,
-                quantity=ingredient_data.get("quantity", 1),
-                unit=ingredient_data.get("unit", product.default_unit),
+                quantity=ing_quantity,
+                unit=ing_unit or product.default_unit,
             )
             db.add(recipe_ingredient)
 
         db.commit()
         db.refresh(recipe)
 
-        saved_ids = {ing.product_id for ing in recipe.ingredients}
-        matched_with_inventory = saved_ids & valid_inventory_ids
-        final_match_pct = (
-            (len(matched_with_inventory) / len(saved_ids) * 100) if saved_ids else 0
+        saved_product_ids = {ing.product_id for ing in recipe.ingredients}
+        final_matched = saved_product_ids & valid_inventory_ids
+        final_percentage = (
+            (len(final_matched) / len(saved_product_ids) * 100)
+            if saved_product_ids
+            else 0
         )
 
-        logger.info(
-            f" Source: {source}\n"
-            f" Recipe saved: {recipe.id} - {recipe.title}\n"
-            f"   Total ingredients: {len(saved_ids)}\n"
-            f"   Matched from inventory: {ingredients_matched}\n"
-            f"   Created new: {ingredients_created}\n"
-            f"   Final match %: {final_match_pct:.1f}% (was {suggestion.match_percentage}%)"
+        print(f"=== RECIPE SAVED: {recipe.id} ===")
+        print(f"  Ingredients: {len(saved_product_ids)}")
+        print(
+            f"  Matched with inventory: {len(final_matched)}/{len(saved_product_ids)}"
         )
-
-        if abs(final_match_pct - suggestion.match_percentage) > 10:
-            logger.warning(
-                f" MISMATCH ALERT: AI said {suggestion.match_percentage}% but actual is {final_match_pct:.1f}%"
-            )
+        print(
+            f"  Final percentage: {final_percentage:.1f}% (AI said: {suggestion.match_percentage}%)"
+        )
+        print(f"  Saved product IDs: {saved_product_ids}")
+        print(f"  Inventory IDs: {valid_inventory_ids}")
+        print(f"  Intersection: {final_matched}")
+        print("=" * 50)
 
         return recipe
 
     except Exception as e:
         db.rollback()
-        logger.error(f"Failed to save suggested recipe: {e}")
+        print(f"ERROR saving recipe: {e}")
+        import traceback
+
+        traceback.print_exc()
         raise HTTPException(
             status_code=500, detail=f"Erreur lors de la sauvegarde: {str(e)}"
         )

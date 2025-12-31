@@ -53,6 +53,7 @@ class RecipeService:
         self.db.refresh(recipe)
         return recipe
 
+
     def find_feasible_recipes(
         self,
         fridge_id: int,
@@ -60,6 +61,14 @@ class RecipeService:
         sort_by: str = "match",
         sort_order: str = "desc",
     ) -> List[Dict[str, Any]]:
+        import unicodedata
+
+        def normalize(s):
+            s = s.lower().strip()
+            s = unicodedata.normalize("NFD", s)
+            s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+            return s
+
         all_recipes = self.db.query(Recipe).filter(Recipe.fridge_id == fridge_id).all()
 
         inventory = (
@@ -72,26 +81,24 @@ class RecipeService:
         available_by_normalized_name = {}
 
         for item in inventory:
-            product = (
-                self.db.query(Product).filter(Product.id == item.product_id).first()
-            )
+            product = self.db.query(Product).filter(Product.id == item.product_id).first()
             if product:
                 available_by_product_id[item.product_id] = {
                     "quantity": item.quantity,
                     "unit": item.unit,
                     "product": product,
                 }
-                normalized = VisionService.normalize_product_name(product.name)
-                available_by_normalized_name[normalized] = {
+                norm_name = normalize(product.name)
+                available_by_normalized_name[norm_name] = {
                     "quantity": item.quantity,
                     "unit": item.unit,
                     "product_id": item.product_id,
                     "product": product,
                 }
 
-        logger.info(
-            f" Inventaire du frigo {fridge_id}: {len(available_by_product_id)} produits"
-        )
+        print(f"=== FIND_FEASIBLE for fridge {fridge_id} ===")
+        print(f"Inventory IDs: {set(available_by_product_id.keys())}")
+        print(f"Inventory names: {list(available_by_normalized_name.keys())}")
 
         feasible_recipes = []
 
@@ -107,7 +114,8 @@ class RecipeService:
 
             available_count = 0
             missing_ingredients = []
-            matched_product_ids = set()
+
+            print(f"\nRecipe: {recipe.title}")
 
             for ingredient in recipe_ingredients:
                 product_id = ingredient.product_id
@@ -121,43 +129,55 @@ class RecipeService:
                     if ingredient_product
                     else f"Product #{product_id}"
                 )
-                normalized_name = VisionService.normalize_product_name(ingredient_name)
+                ing_normalized = normalize(ingredient_name)
 
-                available = available_by_product_id.get(product_id)
+                found = False
 
-                if not available:
-                    available = available_by_normalized_name.get(normalized_name)
-                    if available:
-                        logger.debug(
-                            f"   Match par nom: '{ingredient_name}' → inventory product_id={available['product_id']}"
+                if product_id in available_by_product_id:
+                    available = available_by_product_id[product_id]
+                    if available["quantity"] >= required_qty:
+                        available_count += 1
+                        found = True
+                        print(f"  [OK by ID] {ingredient_name} (id={product_id})")
+
+                if not found and ing_normalized in available_by_normalized_name:
+                    available = available_by_normalized_name[ing_normalized]
+                    if available["quantity"] >= required_qty:
+                        available_count += 1
+                        found = True
+                        print(
+                            f"  [OK by name] {ingredient_name} -> {available['product'].name}"
                         )
 
-                if available and available["quantity"] >= required_qty:
-                    available_count += 1
-                    matched_product_ids.add(product_id)
-                    logger.debug(f"   {ingredient_name} disponible")
-                else:
+                if not found:
+                    for inv_norm_name, inv_data in available_by_normalized_name.items():
+                        if (
+                            len(ing_normalized) >= 3 and ing_normalized in inv_norm_name
+                        ) or (len(inv_norm_name) >= 3 and inv_norm_name in ing_normalized):
+                            if inv_data["quantity"] >= required_qty:
+                                available_count += 1
+                                found = True
+                                print(
+                                    f"  [OK by substring] {ingredient_name} -> {inv_data['product'].name}"
+                                )
+                                break
+
+                if not found:
                     missing_ingredients.append(
                         {
                             "product_id": product_id,
                             "product_name": ingredient_name,
                             "quantity": required_qty,
                             "unit": ingredient.unit,
-                            "available_quantity": available["quantity"]
-                            if available
-                            else 0,
+                            "available_quantity": 0,
                         }
                     )
-                    logger.debug(f"   {ingredient_name} manquant")
+                    print(f"  [MISSING] {ingredient_name}")
 
             match_percentage = (available_count / total_ingredients) * 100
             can_make = len(missing_ingredients) == 0
 
-            logger.info(
-                f"📊 Recipe '{recipe.title}': "
-                f"{available_count}/{total_ingredients} ingrédients → "
-                f"match={match_percentage:.1f}%, missing={len(missing_ingredients)}"
-            )
+            print(f"  => {available_count}/{total_ingredients} = {match_percentage:.1f}%")
 
             shopping_list_status = None
             shopping_list_id = None
@@ -184,32 +204,9 @@ class RecipeService:
                 total_items = len(shopping_items)
 
                 if total_items > 0:
-                    purchased_by_product_id = set()
-                    purchased_by_name = set()
-
-                    for item in shopping_items:
-                        if item.status == "purchased":
-                            purchased_by_product_id.add(item.product_id)
-
-                            item_product = (
-                                self.db.query(Product)
-                                .filter(Product.id == item.product_id)
-                                .first()
-                            )
-                            if item_product:
-                                purchased_by_name.add(
-                                    VisionService.normalize_product_name(
-                                        item_product.name
-                                    )
-                                )
-
-                    purchased_items_count = len(purchased_by_product_id)
-
-                    logger.info(
-                        f"  🛒 Shopping list #{shopping_list_id}: {purchased_items_count}/{total_items} achetés"
+                    purchased_items_count = sum(
+                        1 for item in shopping_items if item.status == "purchased"
                     )
-                    logger.debug(f"     IDs achetés: {purchased_by_product_id}")
-                    logger.debug(f"     Noms achetés: {purchased_by_name}")
 
                     if purchased_items_count == total_items:
                         shopping_list_status = "completed"
@@ -218,48 +215,25 @@ class RecipeService:
                     else:
                         shopping_list_status = "pending"
 
-                    for missing in missing_ingredients:
-                        missing_product_id = missing.get("product_id")
-                        missing_name = VisionService.normalize_product_name(
-                            missing.get("product_name", "")
-                        )
+                    purchased_missing_count = purchased_items_count
+                    total_missing_count = total_items
 
-                        if missing_product_id in purchased_by_product_id:
-                            purchased_missing_count += 1
-                            logger.debug(
-                                f"      Manquant '{missing['product_name']}' acheté (par ID)"
-                            )
-                        elif missing_name in purchased_by_name:
-                            purchased_missing_count += 1
-                            logger.debug(
-                                f"      Manquant '{missing['product_name']}' acheté (par nom)"
-                            )
-
-                    logger.info(
-                        f"  📈 Ingrédients manquants achetés: {purchased_missing_count}/{total_missing_count}"
+                    shopping_completion_ratio = purchased_items_count / total_items
+                    missing_percentage = 100 - match_percentage
+                    combined_percentage = match_percentage + (
+                        shopping_completion_ratio * missing_percentage
                     )
 
-                    if total_missing_count > 0:
-                        missing_covered_ratio = (
-                            purchased_missing_count / total_missing_count
-                        )
-
-                        missing_percentage = 100 - match_percentage
-                        added_from_shopping = missing_covered_ratio * missing_percentage
-                        combined_percentage = match_percentage + added_from_shopping
-
-                        if purchased_missing_count >= total_missing_count:
-                            combined_percentage = 100.0
-                            ingredients_complete = True
-
-                        logger.info(
-                            f"  📊 Calcul: base={match_percentage:.1f}% + "
-                            f"({purchased_missing_count}/{total_missing_count} × {missing_percentage:.1f}%) = "
-                            f"{combined_percentage:.1f}%"
-                        )
-                    elif shopping_list_status == "completed":
+                    if purchased_items_count == total_items:
                         combined_percentage = 100.0
                         ingredients_complete = True
+
+                    print(
+                        f"  Shopping list: {purchased_items_count}/{total_items} purchased"
+                    )
+                    print(
+                        f"  Combined: {match_percentage:.1f}% + ({purchased_items_count}/{total_items} * {missing_percentage:.1f}%) = {combined_percentage:.1f}%"
+                    )
 
             feasible_recipes.append(
                 {
@@ -279,13 +253,9 @@ class RecipeService:
         reverse = sort_order == "desc"
 
         if sort_by == "match":
-            feasible_recipes.sort(
-                key=lambda x: x["combined_percentage"], reverse=reverse
-            )
+            feasible_recipes.sort(key=lambda x: x["combined_percentage"], reverse=reverse)
         elif sort_by == "name":
-            feasible_recipes.sort(
-                key=lambda x: x["recipe"].title.lower(), reverse=reverse
-            )
+            feasible_recipes.sort(key=lambda x: x["recipe"].title.lower(), reverse=reverse)
         elif sort_by == "date":
             feasible_recipes.sort(key=lambda x: x["recipe"].created_at, reverse=reverse)
         elif sort_by == "time":
@@ -293,10 +263,7 @@ class RecipeService:
                 key=lambda x: x["recipe"].preparation_time or 9999, reverse=reverse
             )
 
-        logger.info(
-            f" Trouvé {len(feasible_recipes)} recettes (triées par {sort_by} {sort_order})"
-        )
-
+        print("=" * 50)
         return feasible_recipes
 
     def _check_dietary_restrictions(self, recipe: Recipe, user: User) -> bool:
@@ -393,177 +360,128 @@ class RecipeService:
 
         return round(match_percentage, 1)
 
-    def _find_best_inventory_match(
-        self, ingredient_name: str, inventory: list
-    ) -> int | None:
-        from difflib import SequenceMatcher
-
-        ingredient_lower = ingredient_name.lower().strip()
-        best_match_id = None
-        best_score = 0.0
-
-        for inv_item in inventory:
-            inv_name = inv_item["name"].lower().strip()
-
-            if ingredient_lower == inv_name:
-                return inv_item["id"]
-
-            if ingredient_lower in inv_name or inv_name in ingredient_lower:
-                score = 0.8
-                if score > best_score:
-                    best_score = score
-                    best_match_id = inv_item["id"]
-                    continue
-
-            score = SequenceMatcher(None, ingredient_lower, inv_name).ratio()
-            if score > best_score and score >= 0.5:
-                best_score = score
-                best_match_id = inv_item["id"]
-
-        return best_match_id if best_score >= 0.5 else None
-
     async def suggest_recipe_with_ai(
         self, fridge_id: int, user: User
     ) -> SuggestedRecipeResponse:
-        import logging
+        import traceback
 
-        logger = logging.getLogger(__name__)
-
-        inventory_items = (
-            self.db.query(InventoryItem)
-            .filter(InventoryItem.fridge_id == fridge_id, InventoryItem.quantity > 0)
-            .all()
-        )
-
-        logger.info(f"Found {len(inventory_items)} items in fridge {fridge_id}")
-
-        available_ingredients = []
-        inventory_map = {}
-
-        for item in inventory_items:
-            product = (
-                self.db.query(Product).filter(Product.id == item.product_id).first()
+        try:
+            inventory_items = (
+                self.db.query(InventoryItem)
+                .filter(
+                    InventoryItem.fridge_id == fridge_id, InventoryItem.quantity > 0
+                )
+                .all()
             )
-            if product:
-                ingredient_info = {
-                    "id": item.product_id,
-                    "name": product.name,
-                    "quantity": item.quantity,
-                    "unit": item.unit or product.default_unit or "pièce",
-                    "category": product.category or "Divers",
-                }
-                available_ingredients.append(ingredient_info)
-                inventory_map[item.product_id] = product
-                logger.info(
-                    f"  - [{item.product_id}] {product.name}: {item.quantity} {item.unit}"
+
+            available_ingredients = []
+            inventory_map = {}
+
+            for item in inventory_items:
+                product = (
+                    self.db.query(Product).filter(Product.id == item.product_id).first()
+                )
+                if product:
+                    ingredient_info = {
+                        "id": item.product_id,
+                        "name": product.name,
+                        "quantity": item.quantity,
+                        "unit": item.unit or product.default_unit or "piece",
+                        "category": product.category or "Divers",
+                    }
+                    available_ingredients.append(ingredient_info)
+                    inventory_map[item.product_id] = product
+
+            print(f"=== INVENTORY FOR FRIDGE {fridge_id} ===")
+            for ing in available_ingredients:
+                print(f"  [{ing['id']}] {ing['name']}")
+            print("=" * 50)
+
+            if not available_ingredients:
+                return SuggestedRecipeResponse(
+                    title="Inventaire vide",
+                    description="Votre frigo ne contient aucun ingredient reconnu.",
+                    ingredients=[],
+                    steps="1. Ajoutez des produits a votre inventaire",
+                    preparation_time=0,
+                    difficulty="easy",
+                    available_ingredients=[],
+                    missing_ingredients=[],
+                    match_percentage=0.0,
                 )
 
-        if not available_ingredients:
-            return SuggestedRecipeResponse(
-                title="Inventaire vide",
-                description="Votre frigo ne contient aucun ingrédient reconnu.",
-                ingredients=[],
-                steps="1. Ajoutez des produits à votre inventaire",
-                preparation_time=0,
-                difficulty="easy",
-                available_ingredients=[],
-                missing_ingredients=[],
-                match_percentage=0.0,
+            dietary_restrictions = user.dietary_restrictions or []
+            restrictions_text = (
+                ", ".join(dietary_restrictions) if dietary_restrictions else "Aucune"
+            )
+            cuisine_text = (
+                user.preferred_cuisine if user.preferred_cuisine else "Variee"
             )
 
-        dietary_restrictions = user.dietary_restrictions or []
-        restrictions_text = (
-            ", ".join(dietary_restrictions) if dietary_restrictions else "Aucune"
-        )
-        cuisine_text = user.preferred_cuisine if user.preferred_cuisine else "Variée"
-
-        output_schema = {
-            "type": "object",
-            "properties": {
-                "title": {"type": "string"},
-                "description": {"type": "string"},
-                "ingredients": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "name": {"type": "string"},
-                            "quantity": {"type": "number"},
-                            "unit": {"type": "string"},
-                            "is_available": {"type": "boolean"},
-                            "matched_inventory_id": {
-                                "type": ["integer", "null"],
-                                "description": "L'ID du produit dans l'inventaire si disponible, null sinon",
+            output_schema = {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "description": {"type": "string"},
+                    "ingredients": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string"},
+                                "quantity": {"type": "number"},
+                                "unit": {"type": "string"},
                             },
-                            "matched_inventory_name": {
-                                "type": ["string", "null"],
-                                "description": "Le nom exact du produit matché dans l'inventaire",
-                            },
+                            "required": ["name", "quantity", "unit"],
                         },
-                        "required": ["name", "quantity", "unit", "is_available"],
                     },
+                    "steps": {"type": "string"},
+                    "preparation_time": {"type": "integer"},
+                    "difficulty": {"type": "string"},
                 },
-                "steps": {"type": "string"},
-                "preparation_time": {"type": "integer"},
-                "difficulty": {"type": "string"},
-            },
-            "required": [
-                "title",
-                "description",
-                "ingredients",
-                "steps",
-                "preparation_time",
-                "difficulty",
-            ],
-        }
+                "required": [
+                    "title",
+                    "description",
+                    "ingredients",
+                    "steps",
+                    "preparation_time",
+                    "difficulty",
+                ],
+            }
 
-        ingredients_text = "\n".join(
-            [
-                f"- [ID:{ing['id']}] {ing['name']}: {ing['quantity']} {ing['unit']} ({ing['category']})"
-                for ing in available_ingredients
-            ]
-        )
+            ingredients_text = "\n".join(
+                [
+                    f"- {ing['name']}: {ing['quantity']} {ing['unit']} ({ing['category']})"
+                    for ing in available_ingredients
+                ]
+            )
 
-        prompt = f"""Tu es un chef cuisinier créatif. Suggère UNE recette basée sur les ingrédients disponibles.
+            prompt = f"""Tu es un chef cuisinier creatif. Suggere UNE recette basee sur les ingredients disponibles.
 
-    INGRÉDIENTS DISPONIBLES DANS LE FRIGO (avec leurs IDs):
+    INGREDIENTS DISPONIBLES DANS LE FRIGO:
     {ingredients_text}
 
-    PRÉFÉRENCES:
-    - Cuisine préférée: {cuisine_text}
+    PREFERENCES:
+    - Cuisine preferee: {cuisine_text}
     - Restrictions alimentaires: {restrictions_text}
 
     {self._generate_dietary_restrictions_rules(dietary_restrictions)}
 
-    RÈGLES CRITIQUES POUR LE MAPPING DES INGRÉDIENTS:
-    1. Pour chaque ingrédient de ta recette, tu DOIS vérifier s'il correspond à un produit de la liste ci-dessus
-    2. Si un ingrédient correspond (même partiellement) à un produit de l'inventaire:
-    - is_available: true
-    - matched_inventory_id: l'ID entre crochets [ID:X] du produit correspondant
-    - matched_inventory_name: le nom EXACT du produit dans l'inventaire
-    3. Exemples de correspondances VALIDES:
-    - "Lait entier" dans la recette → [ID:5] "Lait" dans l'inventaire → matched_inventory_id: 5
-    - "Œufs" dans la recette → [ID:12] "Oeufs" dans l'inventaire → matched_inventory_id: 12
-    - "Fromage râpé" dans la recette → [ID:8] "Emmental" dans l'inventaire → matched_inventory_id: 8
-    4. Si l'ingrédient n'a PAS de correspondance dans l'inventaire:
-    - is_available: false
-    - matched_inventory_id: null
-    - matched_inventory_name: null
+    REGLES:
+    - Utilise EN PRIORITE les ingredients listes ci-dessus
+    - Tu peux suggerer quelques ingredients de base manquants (sel, poivre, huile)
+    - Temps de preparation en minutes
+    - Difficulte: "easy", "medium" ou "hard"
+    - Reponds en FRANCAIS
 
-    AUTRES RÈGLES:
-    - Tu peux suggérer quelques ingrédients de base manquants (sel, poivre, huile)
-    - Temps de préparation en minutes
-    - Difficulté: "easy", "medium" ou "hard"
-    - Réponds en FRANÇAIS
+    Reponds UNIQUEMENT en JSON."""
 
-    Réponds UNIQUEMENT en JSON."""
+            print("Calling Gemini API...")
 
-        try:
             config = types.GenerateContentConfig(
                 system_instruction=(
-                    "Tu es un chef expert. Pour chaque ingrédient, tu DOIS indiquer "
-                    "matched_inventory_id avec l'ID exact du produit de l'inventaire s'il correspond. "
-                    "Réponds en français et uniquement en JSON."
+                    "Tu es un chef expert. Utilise principalement les ingredients fournis. "
+                    "Reponds en francais et uniquement en JSON."
                 ),
                 response_mime_type="application/json",
                 response_schema=output_schema,
@@ -575,71 +493,46 @@ class RecipeService:
                 config=config,
             )
 
+            print("Gemini API response received")
+
             data = json.loads(response.text)
-            logger.info(f"AI response: {data.get('title', 'No title')}")
+
+            print(f"Recipe title: {data.get('title')}")
+            print(
+                f"Ingredients from AI: {[ing.get('name') for ing in data.get('ingredients', [])]}"
+            )
 
             processed_ingredients = []
             available_names = []
             missing_ingredients = []
 
-            inventory_ids = set(inventory_map.keys())
-
             for ing in data.get("ingredients", []):
                 ing_name = ing.get("name", "").strip()
-                matched_id = ing.get("matched_inventory_id")
-                matched_name = ing.get("matched_inventory_name")
-                is_available = ing.get("is_available", False)
 
                 if self._ingredient_violates_restrictions(
                     ing_name, dietary_restrictions
                 ):
-                    logger.warning(f"Filtering restricted ingredient: {ing_name}")
                     continue
+
+                matched_product_id = self._match_ingredient_to_inventory(
+                    ing_name, available_ingredients
+                )
+
+                print(f"AI ingredient: '{ing_name}' -> matched_id={matched_product_id}")
 
                 ing_data = {
                     "name": ing_name,
                     "quantity": ing.get("quantity", 1),
                     "unit": ing.get("unit", ""),
-                    "is_available": False,
-                    "matched_inventory_id": None,
-                    "matched_inventory_name": None,
+                    "is_available": matched_product_id is not None,
+                    "matched_inventory_id": matched_product_id,
+                    "matched_inventory_name": inventory_map[matched_product_id].name
+                    if matched_product_id
+                    else None,
                 }
 
-                if matched_id is not None and matched_id in inventory_ids:
-                    ing_data["is_available"] = True
-                    ing_data["matched_inventory_id"] = matched_id
-                    ing_data["matched_inventory_name"] = (
-                        matched_name or inventory_map[matched_id].name
-                    )
+                if matched_product_id:
                     available_names.append(ing_name)
-                    logger.info(
-                        f"   '{ing_name}' → inventory ID {matched_id} ({ing_data['matched_inventory_name']})"
-                    )
-                elif is_available:
-                    best_match_id = self._find_best_inventory_match(
-                        ing_name, available_ingredients
-                    )
-                    if best_match_id:
-                        ing_data["is_available"] = True
-                        ing_data["matched_inventory_id"] = best_match_id
-                        ing_data["matched_inventory_name"] = inventory_map[
-                            best_match_id
-                        ].name
-                        available_names.append(ing_name)
-                        logger.info(
-                            f"   '{ing_name}' → fallback match ID {best_match_id}"
-                        )
-                    else:
-                        missing_ingredients.append(
-                            {
-                                "name": ing_name,
-                                "quantity": ing.get("quantity", 1),
-                                "unit": ing.get("unit", ""),
-                            }
-                        )
-                        logger.info(
-                            f"   '{ing_name}' marqué dispo par IA mais non trouvé"
-                        )
                 else:
                     missing_ingredients.append(
                         {
@@ -648,7 +541,6 @@ class RecipeService:
                             "unit": ing.get("unit", ""),
                         }
                     )
-                    logger.info(f"   '{ing_name}' manquant")
 
                 processed_ingredients.append(ing_data)
 
@@ -658,12 +550,19 @@ class RecipeService:
             )
             match_percentage = (available_count / total * 100) if total > 0 else 0
 
-            logger.info(
-                f"Final match: {available_count}/{total} = {match_percentage:.1f}%"
-            )
+            print("=== AI SUGGESTION RESULT ===")
+            print(f"  Total ingredients: {total}")
+            print(f"  Available: {available_count}")
+            print(f"  Match percentage: {match_percentage:.1f}%")
+            for ing in processed_ingredients:
+                status = "OK" if ing["is_available"] else "MISSING"
+                print(
+                    f"    [{status}] {ing['name']} -> product_id={ing['matched_inventory_id']}"
+                )
+            print("=" * 50)
 
             return SuggestedRecipeResponse(
-                title=data.get("title", "Recette suggérée"),
+                title=data.get("title", "Recette suggeree"),
                 description=data.get("description", ""),
                 ingredients=processed_ingredients,
                 steps=data.get("steps", ""),
@@ -675,8 +574,61 @@ class RecipeService:
             )
 
         except Exception as e:
-            logger.error(f"Erreur génération recette IA: {e}")
+            print(f"ERROR in suggest_recipe_with_ai: {e}")
+            traceback.print_exc()
             raise
+
+    def _match_ingredient_to_inventory(self, ingredient_name: str, inventory: list):
+        from difflib import SequenceMatcher
+        import unicodedata
+
+        def normalize(s):
+            s = s.lower().strip()
+            s = unicodedata.normalize("NFD", s)
+            s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+            return s
+
+        ingredient_normalized = normalize(ingredient_name)
+        ingredient_words = set(ingredient_normalized.split())
+
+        best_match_id = None
+        best_score = 0.0
+        best_name = None
+
+        for inv_item in inventory:
+            inv_name = inv_item["name"]
+            inv_normalized = normalize(inv_name)
+            inv_words = set(inv_normalized.split())
+
+            if ingredient_normalized == inv_normalized:
+                return inv_item["id"]
+
+            if len(ingredient_normalized) >= 3 and len(inv_normalized) >= 3:
+                if ingredient_normalized in inv_normalized:
+                    return inv_item["id"]
+                if inv_normalized in ingredient_normalized:
+                    return inv_item["id"]
+
+            if ingredient_words and inv_words:
+                common_words = ingredient_words & inv_words
+                if common_words:
+                    significant_common = [w for w in common_words if len(w) >= 3]
+                    if significant_common:
+                        return inv_item["id"]
+
+            score = SequenceMatcher(None, ingredient_normalized, inv_normalized).ratio()
+            if score > best_score:
+                best_score = score
+                best_match_id = inv_item["id"]
+                best_name = inv_name
+
+        if best_score >= 0.75:
+            print(
+                f"    Fuzzy match: '{ingredient_name}' ~ '{best_name}' (score={best_score:.2f})"
+            )
+            return best_match_id
+
+        return None
 
     def _generate_dietary_restrictions_rules(
         self, dietary_restrictions: List[str]
@@ -684,53 +636,59 @@ class RecipeService:
         if not dietary_restrictions:
             return "Aucune restriction alimentaire."
 
-        rules = []
+            rules = []
 
-        restrictions_lower = [r.lower().strip() for r in dietary_restrictions]
+            restrictions_lower = [r.lower().strip() for r in dietary_restrictions]
 
-        if "vegan" in restrictions_lower or "végétalien" in restrictions_lower:
+            if "vegan" in restrictions_lower or "végétalien" in restrictions_lower:
+                rules.append(
+                    "- INTERDICTION ABSOLUE: viande, poisson, œufs, lait, beurre, fromage, miel, crème, yaourt"
+                )
+                rules.append(
+                    "- AUTORISÉ: légumes, fruits, céréales, légumineuses, noix, lait végétal"
+                )
+
+            if "vegetarian" in restrictions_lower or "végétarien" in restrictions_lower:
+                rules.append("- INTERDICTION: viande, poisson, fruits de mer")
+                rules.append("- AUTORISÉ: œufs, produits laitiers, légumes, fruits")
+
+            if (
+                "gluten-free" in restrictions_lower
+                or "sans gluten" in restrictions_lower
+            ):
+                rules.append(
+                    "- INTERDICTION: blé, farine de blé, pain classique, pâtes de blé, semoule"
+                )
+                rules.append(
+                    "- AUTORISÉ: riz, quinoa, maïs, pommes de terre, farine sans gluten"
+                )
+
+            if (
+                "dairy-free" in restrictions_lower
+                or "sans lactose" in restrictions_lower
+            ):
+                rules.append("- INTERDICTION: lait, fromage, beurre, crème, yaourt")
+                rules.append(
+                    "- AUTORISÉ: lait végétal (amande, soja, avoine), margarine végétale"
+                )
+
+            if "nut-free" in restrictions_lower or "sans noix" in restrictions_lower:
+                rules.append(
+                    "- INTERDICTION: noix, amandes, noisettes, cacahuètes, pistaches"
+                )
+
+            if "halal" in restrictions_lower:
+                rules.append("- INTERDICTION: porc, alcool")
+
+            if "kosher" in restrictions_lower or "casher" in restrictions_lower:
+                rules.append("- INTERDICTION: porc, fruits de mer, mélange viande+lait")
+
             rules.append(
-                "- INTERDICTION ABSOLUE: viande, poisson, œufs, lait, beurre, fromage, miel, crème, yaourt"
+                f"\nL'UTILISATEUR A LES RESTRICTIONS SUIVANTES: {', '.join(dietary_restrictions)}"
             )
-            rules.append(
-                "- AUTORISÉ: légumes, fruits, céréales, légumineuses, noix, lait végétal"
-            )
+            rules.append("NE SUGGÈRE AUCUN INGRÉDIENT QUI VIOLE CES RESTRICTIONS.")
 
-        if "vegetarian" in restrictions_lower or "végétarien" in restrictions_lower:
-            rules.append("- INTERDICTION: viande, poisson, fruits de mer")
-            rules.append("- AUTORISÉ: œufs, produits laitiers, légumes, fruits")
-
-        if "gluten-free" in restrictions_lower or "sans gluten" in restrictions_lower:
-            rules.append(
-                "- INTERDICTION: blé, farine de blé, pain classique, pâtes de blé, semoule"
-            )
-            rules.append(
-                "- AUTORISÉ: riz, quinoa, maïs, pommes de terre, farine sans gluten"
-            )
-
-        if "dairy-free" in restrictions_lower or "sans lactose" in restrictions_lower:
-            rules.append("- INTERDICTION: lait, fromage, beurre, crème, yaourt")
-            rules.append(
-                "- AUTORISÉ: lait végétal (amande, soja, avoine), margarine végétale"
-            )
-
-        if "nut-free" in restrictions_lower or "sans noix" in restrictions_lower:
-            rules.append(
-                "- INTERDICTION: noix, amandes, noisettes, cacahuètes, pistaches"
-            )
-
-        if "halal" in restrictions_lower:
-            rules.append("- INTERDICTION: porc, alcool")
-
-        if "kosher" in restrictions_lower or "casher" in restrictions_lower:
-            rules.append("- INTERDICTION: porc, fruits de mer, mélange viande+lait")
-
-        rules.append(
-            f"\nL'UTILISATEUR A LES RESTRICTIONS SUIVANTES: {', '.join(dietary_restrictions)}"
-        )
-        rules.append("NE SUGGÈRE AUCUN INGRÉDIENT QUI VIOLE CES RESTRICTIONS.")
-
-        return "\n".join(rules)
+            return "\n".join(rules)
 
     def _ingredient_violates_restrictions(
         self, ingredient_name: str, dietary_restrictions: List[str]
