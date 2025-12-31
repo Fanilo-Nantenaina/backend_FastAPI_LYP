@@ -30,8 +30,8 @@ def list_recipes(
     difficulty: str = None,
     cuisine: str = None,
     limit: int = 50,
-    sort_by: str = Query("date", regex="^(date|name|time)$"),
-    order: str = Query("desc", regex="^(asc|desc)$"),
+    sort_by: str = Query("date", pattern="^(date|name|time)$"),
+    order: str = Query("desc", pattern="^(asc|desc)$"),
 ):
     query = db.query(Recipe)
 
@@ -164,8 +164,8 @@ def list_feasible_recipes(
     fridge_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    sort_by: str = Query("match", regex="^(match|name|date|time)$"),
-    order: str = Query("desc", regex="^(asc|desc)$"),
+    sort_by: str = Query("match", pattern="^(match|name|date|time)$"),
+    order: str = Query("desc", pattern="^(asc|desc)$"),
 ):
     from app.models.fridge import Fridge
 
