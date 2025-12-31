@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     DEVICE_PAIRING_CODE_LENGTH: int = 6
     DEVICE_PAIRING_TIMEOUT_MINUTES: int = 5
 
+    REDIS_URL: Optional[str] = None
+
     SCHEDULER_ENABLED: bool = True
     ALERT_CHECK_INTERVAL_HOURS: int = 1
     SEND_DAILY_SUMMARY: bool = True
