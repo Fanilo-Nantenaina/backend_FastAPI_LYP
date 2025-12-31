@@ -4,12 +4,11 @@ from typing import List
 import logging
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user, get_user_fridge
+from app.core.dependencies import get_current_user
 from app.models.user import User
 from app.models.fridge import Fridge
 from app.models.recipe import Recipe, RecipeFavorite, RecipeIngredient
 from app.models.product import Product
-from sqlalchemy import or_
 
 from app.schemas.recipe import (
     RecipeResponse,
@@ -227,12 +226,6 @@ async def suggest_recipe_with_ai(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """NOUVELLE ROUTE: Suggestion IA de recette basée sur l'inventaire
-
-    La recette suggérée sera liée à ce frigo
-    """
-    from app.models.fridge import Fridge
-
     fridge = (
         db.query(Fridge)
         .filter(Fridge.id == fridge_id, Fridge.user_id == current_user.id)
@@ -266,13 +259,10 @@ async def save_suggested_recipe(
     db: Session = Depends(get_db),
 ):
     """
-    Sauvegarde une recette suggérée par l'IA dans la base de données
-    ✅ CORRIGÉ : Utilise les available_ingredients de l'IA pour un matching précis
+    V2 : Utilise matched_inventory_id fourni par l'IA pour garantir la cohérence
     """
     try:
-        from app.services.vision_service import VisionService
-
-        # Récupérer l'inventaire du frigo pour avoir les product_id disponibles
+        # Récupérer l'inventaire pour validation
         from app.models.inventory import InventoryItem
 
         inventory_items = (
@@ -284,25 +274,11 @@ async def save_suggested_recipe(
             .all()
         )
 
-        # Créer un mapping product_id -> product pour l'inventaire
-        inventory_products = {}
-        for item in inventory_items:
-            product = db.query(Product).filter(Product.id == item.product_id).first()
-            if product:
-                inventory_products[product.id] = product
+        # Set des product_id valides dans l'inventaire
+        valid_inventory_ids = {item.product_id for item in inventory_items}
 
-        logger.info(
-            f"Inventaire du frigo {suggestion.fridge_id}: {len(inventory_products)} produits"
-        )
-
-        # Créer un set des noms disponibles (normalisés) depuis l'IA
-        available_from_ai = set()
-        if suggestion.available_ingredients:
-            available_from_ai = {
-                VisionService.normalize_product_name(name.strip())
-                for name in suggestion.available_ingredients
-            }
-            logger.info(f"IA considère disponibles: {available_from_ai}")
+        logger.info(f"Saving recipe for fridge {suggestion.fridge_id}")
+        logger.info(f"Valid inventory IDs: {valid_inventory_ids}")
 
         recipe = Recipe(
             title=suggestion.title,
@@ -320,79 +296,120 @@ async def save_suggested_recipe(
         db.add(recipe)
         db.flush()
 
+        ingredients_matched = 0
+        ingredients_created = 0
+
         for ingredient_data in suggestion.ingredients:
-            ingredient_name = ingredient_data["name"].strip()
-            normalized_ingredient = VisionService.normalize_product_name(
-                ingredient_name
-            )
+            ingredient_name = ingredient_data.get("name", "").strip()
+            matched_id = ingredient_data.get("matched_inventory_id")
+            is_available = ingredient_data.get("is_available", False)
 
-            # ✅ PRIORITÉ 1: Si l'IA dit que c'est disponible, chercher dans l'inventaire
             product = None
-            best_match = None
-            best_score = 0.0
+            source = None
 
-            if normalized_ingredient in available_from_ai:
-                logger.info(
-                    f"🔍 '{ingredient_name}' marqué DISPONIBLE par l'IA, recherche dans inventaire..."
-                )
-
-                # Chercher parmi les produits de l'inventaire uniquement
-                for prod_id, prod in inventory_products.items():
-                    normalized_db = VisionService.normalize_product_name(prod.name)
-
-                    # Match exact normalisé
-                    if normalized_ingredient == normalized_db:
-                        best_match = prod
-                        best_score = 100.0
-                        logger.info(f"  ✅ EXACT MATCH: '{prod.name}' (ID: {prod.id})")
-                        break
-
-                    # Similarité haute
-                    similarity = VisionService.calculate_similarity(
-                        normalized_ingredient, normalized_db
-                    )
-
-                    if (
-                        similarity > best_score and similarity >= 60
-                    ):  # Seuil abaissé pour inventaire
-                        best_match = prod
-                        best_score = similarity
-
-                if best_match:
-                    product = best_match
+            #  PRIORITÉ 1 : Utiliser matched_inventory_id si fourni et valide
+            if matched_id is not None and matched_id in valid_inventory_ids:
+                product = db.query(Product).filter(Product.id == matched_id).first()
+                if product:
+                    source = f"matched_inventory_id={matched_id}"
+                    ingredients_matched += 1
                     logger.info(
-                        f"  ✅ Matched DISPONIBLE '{ingredient_name}' → '{product.name}' "
-                        f"(ID: {product.id}, score: {best_score:.1f}%)"
-                    )
-                else:
-                    logger.warning(
-                        f"  ⚠️ L'IA dit '{ingredient_name}' disponible mais RIEN trouvé dans inventaire!"
+                        f"   '{ingredient_name}' → Product ID {matched_id} ({product.name}) [FROM AI MAPPING]"
                     )
 
-            # ✅ PRIORITÉ 2: Si pas trouvé dans inventaire, chercher dans TOUS les produits
+            #  PRIORITÉ 2 : Chercher par nom exact dans tous les produits
+            if not product:
+                from app.services.vision_service import VisionService
+
+                normalized = VisionService.normalize_product_name(ingredient_name)
+
+                # D'abord dans l'inventaire
+                for item in inventory_items:
+                    inv_product = (
+                        db.query(Product).filter(Product.id == item.product_id).first()
+                    )
+                    if inv_product:
+                        inv_normalized = VisionService.normalize_product_name(
+                            inv_product.name
+                        )
+                        if normalized == inv_normalized:
+                            product = inv_product
+                            source = "exact_match_inventory"
+                            ingredients_matched += 1
+                            logger.info(
+                                f"   '{ingredient_name}' → Product ID {product.id} ({product.name}) [EXACT MATCH]"
+                            )
+                            break
+
+            #  PRIORITÉ 3 : Chercher par similarité élevée dans l'inventaire
+            if not product and is_available:
+                from difflib import SequenceMatcher
+
+                best_match = None
+                best_score = 0.0
+
+                for item in inventory_items:
+                    inv_product = (
+                        db.query(Product).filter(Product.id == item.product_id).first()
+                    )
+                    if inv_product:
+                        score = SequenceMatcher(
+                            None, ingredient_name.lower(), inv_product.name.lower()
+                        ).ratio()
+
+                        # Bonus si inclusion
+                        if (
+                            ingredient_name.lower() in inv_product.name.lower()
+                            or inv_product.name.lower() in ingredient_name.lower()
+                        ):
+                            score = max(score, 0.75)
+
+                        if score > best_score:
+                            best_score = score
+                            best_match = inv_product
+
+                if (
+                    best_match and best_score >= 0.4
+                ):  # Seuil bas car l'IA dit que c'est dispo
+                    product = best_match
+                    source = f"fuzzy_inventory({best_score:.0%})"
+                    ingredients_matched += 1
+                    logger.info(
+                        f"   '{ingredient_name}' → Product ID {product.id} ({product.name}) [FUZZY {best_score:.0%}]"
+                    )
+
+            #  PRIORITÉ 4 : Chercher dans tous les produits existants
             if not product:
                 all_products = db.query(Product).all()
+                from difflib import SequenceMatcher
+
+                best_match = None
+                best_score = 0.0
 
                 for prod in all_products:
-                    normalized_db = VisionService.normalize_product_name(prod.name)
-
-                    if normalized_ingredient == normalized_db:
+                    if prod.name.lower() == ingredient_name.lower():
                         product = prod
-                        best_score = 100.0
+                        source = "exact_match_global"
                         logger.info(
-                            f"  ✅ EXACT MATCH global: '{prod.name}' (ID: {prod.id})"
+                            f"   '{ingredient_name}' → Product ID {product.id} [EXACT GLOBAL]"
                         )
                         break
 
-                    similarity = VisionService.calculate_similarity(
-                        normalized_ingredient, normalized_db
+                    score = SequenceMatcher(
+                        None, ingredient_name.lower(), prod.name.lower()
+                    ).ratio()
+                    if score > best_score and score >= 0.7:
+                        best_score = score
+                        best_match = prod
+
+                if not product and best_match:
+                    product = best_match
+                    source = f"fuzzy_global({best_score:.0%})"
+                    logger.info(
+                        f"   '{ingredient_name}' → Product ID {product.id} ({product.name}) [FUZZY GLOBAL]"
                     )
 
-                    if similarity > best_score and similarity >= 70:
-                        product = prod
-                        best_score = similarity
-
-            # ✅ PRIORITÉ 3: Créer nouveau produit si aucun match
+            #  PRIORITÉ 5 : Créer nouveau produit uniquement en dernier recours
             if not product:
                 product = Product(
                     name=ingredient_name.capitalize(),
@@ -402,9 +419,9 @@ async def save_suggested_recipe(
                 )
                 db.add(product)
                 db.flush()
-                logger.info(
-                    f"  🆕 Created new product: '{product.name}' (ID: {product.id})"
-                )
+                source = "created_new"
+                ingredients_created += 1
+                logger.info(f" '{ingredient_name}' → NEW Product ID {product.id}")
 
             # Créer l'ingrédient de recette
             recipe_ingredient = RecipeIngredient(
@@ -418,10 +435,27 @@ async def save_suggested_recipe(
         db.commit()
         db.refresh(recipe)
 
-        logger.info(
-            f"✅ Saved AI-suggested recipe: {recipe.id} - {recipe.title} "
-            f"(fridge_id: {recipe.fridge_id})"
+        #  Vérification finale de cohérence
+        saved_ids = {ing.product_id for ing in recipe.ingredients}
+        matched_with_inventory = saved_ids & valid_inventory_ids
+        final_match_pct = (
+            (len(matched_with_inventory) / len(saved_ids) * 100) if saved_ids else 0
         )
+
+        logger.info(
+            f" Source: {source}\n"
+            f" Recipe saved: {recipe.id} - {recipe.title}\n"
+            f"   Total ingredients: {len(saved_ids)}\n"
+            f"   Matched from inventory: {ingredients_matched}\n"
+            f"   Created new: {ingredients_created}\n"
+            f"   Final match %: {final_match_pct:.1f}% (was {suggestion.match_percentage}%)"
+        )
+
+        #  Alerte si grosse différence
+        if abs(final_match_pct - suggestion.match_percentage) > 10:
+            logger.warning(
+                f" MISMATCH ALERT: AI said {suggestion.match_percentage}% but actual is {final_match_pct:.1f}%"
+            )
 
         return recipe
 

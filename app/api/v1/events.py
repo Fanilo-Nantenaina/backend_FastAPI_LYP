@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, Query, HTTPException, Path
 from sqlalchemy.orm import Session
 from typing import Dict, Any, Optional, List
 from datetime import datetime
-from pydantic import BaseModel, Field
 
 from app.core.database import get_db
 from app.core.dependencies import get_user_fridge, get_current_user

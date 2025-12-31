@@ -98,21 +98,41 @@ class MissingIngredient(BaseModel):
     unit: Optional[str] = None
 
 
+class SuggestedIngredient(BaseModel):
+    """Ingrédient suggéré par l'IA avec mapping vers l'inventaire"""
+
+    name: str
+    quantity: float = 1
+    unit: str = ""
+    is_available: bool = False
+    matched_inventory_id: Optional[int] = None  # ✅ NOUVEAU
+    matched_inventory_name: Optional[str] = None  # ✅ NOUVEAU
+
+
+class MissingIngredient(BaseModel):
+    """Ingrédient manquant"""
+
+    name: str
+    quantity: float = 1
+    unit: str = ""
+
+
 class SuggestedRecipeResponse(BaseModel):
     """Réponse de suggestion de recette par l'IA"""
 
     title: str
     description: str
-    ingredients: List[Dict[str, Any]]
+    ingredients: List[SuggestedIngredient]
     steps: str
     preparation_time: int
     difficulty: str
-    available_ingredients: List[str]
-    missing_ingredients: List[Dict[str, Any]]
+    available_ingredients: List[str] = []
+    missing_ingredients: List[MissingIngredient]=[]
     match_percentage: float
     fridge_id: Optional[int] = None
 
     class Config:
+        from_attributes = True
         json_schema_extra = {
             "example": {
                 "title": "Omelette aux légumes",

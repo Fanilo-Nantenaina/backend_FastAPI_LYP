@@ -102,7 +102,7 @@ Vous avez une nouvelle alerte concernant votre réfrigérateur :
 {alert.message}
 
 Type d'alerte : {alert.type}
-Date : {alert.created_at.strftime('%d/%m/%Y %H:%M')}
+Date : {alert.created_at.strftime("%d/%m/%Y %H:%M")}
 
 Connectez-vous à votre application Smart Fridge pour plus de détails.
 
@@ -146,10 +146,10 @@ L'équipe Smart Fridge
         </div>
         <div class="content">
             <div class="alert-box">
-                <h2 style="margin-top: 0;">{alert.type.replace('_', ' ').title()}</h2>
+                <h2 style="margin-top: 0;">{alert.type.replace("_", " ").title()}</h2>
                 <p style="font-size: 16px;">{alert.message}</p>
                 <p style="color: #666; font-size: 14px;">
-                    Date : {alert.created_at.strftime('%d/%m/%Y à %H:%M')}
+                    Date : {alert.created_at.strftime("%d/%m/%Y à %H:%M")}
                 </p>
             </div>
             <p>Consultez votre application pour gérer cette alerte et voir les détails complets.</p>
@@ -186,16 +186,16 @@ L'équipe Smart Fridge
         subject = f"Résumé quotidien - {fridge.name}"
 
         body = f"""
-Bonjour {user.name or 'cher utilisateur'},
+Bonjour {user.name or "cher utilisateur"},
 
 Voici le résumé quotidien de votre frigo "{fridge.name}" :
 
         - Articles en stock : {inventory_count}
         - Alertes en attente : {len(pending_alerts)}
 
-{'=' * 50}
+{"=" * 50}
 ALERTES EN ATTENTE :
-{'=' * 50}
+{"=" * 50}
 
 """
 
@@ -207,7 +207,7 @@ ALERTES EN ATTENTE :
 
         body += f"""
 
-            {'=' * 50}
+            {"=" * 50}
 
             Consultez votre application pour plus de détails.
 
@@ -480,7 +480,7 @@ ALERTES EN ATTENTE :
 
         subject = f"{len(expiring_items)} produits à consommer rapidement"
         body = f"""
-Bonjour {user.name or 'cher utilisateur'},
+Bonjour {user.name or "cher utilisateur"},
 
 Vous avez {len(expiring_items)} produit(s) qui vont bientôt expirer :
 
@@ -714,7 +714,6 @@ L'équipe Smart Fridge
         from datetime import date
 
         if action == "consumed":
-
             if freshness_status == "expired":
                 title = "Attention à la fraîcheur"
                 body = f"Vous avez consommé {product_name} qui était périmé. Assurez-vous qu'il était encore bon !"
@@ -796,7 +795,7 @@ L'équipe Smart Fridge
                 except:
                     pass
 
-            return (title, body, "📦")
+            return (title, body, "")
 
         elif action == "updated":
             title = "Produit mis à jour"
@@ -808,7 +807,6 @@ L'équipe Smart Fridge
             return (title, body, "✏️")
 
         elif action == "removed":
-
             if freshness_status == "expired":
                 title = "Bon réflexe !"
                 body = f"{product_name} périmé retiré du frigo. Merci de garder un frigo sain !"
@@ -900,7 +898,7 @@ L'équipe Smart Fridge
                     f"({scan_type}) to fridge {fridge_id}"
                 )
             else:
-                logger.warning(f"❌ Failed to send batch notification")
+                logger.warning(f" Failed to send batch notification")
 
             return success
 
@@ -974,7 +972,7 @@ L'équipe Smart Fridge
                 )
 
             body = " • ".join(body_parts)
-            emoji = "📦"
+            emoji = ""
 
         elif scan_type == "consume":
             fully_consumed = sum(

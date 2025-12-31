@@ -9,7 +9,6 @@ from google import genai
 from google.genai import types
 import unicodedata
 import re
-from pydantic import BaseModel
 
 from app.middleware.transaction_handler import transactional
 from app.core.config import settings
@@ -19,7 +18,6 @@ from app.models.event import Event
 from app.schemas.vision import (
     DetectedProduct,
     DetectedProductMatch,
-    ConsumeAnalysisResponse,
 )
 from difflib import SequenceMatcher
 
@@ -198,7 +196,7 @@ class VisionService:
                 if words_search.issubset(words_db) or words_db.issubset(words_search):
                     score += 20
                     logger.info(
-                        f"  📝 Subset bonus: '{product.name}' ({similarity:.1f}% + 20 = {score:.1f})"
+                        f"   Subset bonus: '{product.name}' ({similarity:.1f}% + 20 = {score:.1f})"
                     )
 
                 # 4️⃣ Bonus : Même catégorie → +10 points
@@ -233,7 +231,7 @@ class VisionService:
 
         # Log des autres candidats
         if len(candidates) > 1:
-            logger.info(f"Other candidates:")
+            logger.info("Other candidates:")
             for prod, sc in candidates[1:4]:  # Top 3 suivants
                 logger.info(f"     - '{prod.name}': {sc:.1f}%")
 
@@ -366,7 +364,7 @@ class VisionService:
         if existing:
             logger.info(f"  Found existing inventory item (ID: {existing.id})")
         else:
-            logger.info(f"  No existing inventory item")
+            logger.info("  No existing inventory item")
 
         return existing
 
@@ -388,14 +386,14 @@ class VisionService:
         items_updated = []
         needs_manual_entry = []
 
-        # 📦 COLLECTER les infos pour notification groupée
+        #  COLLECTER les infos pour notification groupée
         notification_products = []
 
         for detected in detected_products:
             result = self._process_detected_product(
                 detected=detected,
                 fridge_id=fridge_id,
-                send_notification=False,  # ❌ Ne pas envoyer individuellement
+                send_notification=False,  #  Ne pas envoyer individuellement
             )
 
             if result["action"] == "added":
@@ -451,7 +449,7 @@ class VisionService:
                     f"Sent batch notification for {len(notification_products)} products"
                 )
             except Exception as e:
-                logger.error(f"❌ Failed to send batch notification: {e}")
+                logger.error(f" Failed to send batch notification: {e}")
 
         return {
             "timestamp": datetime.now().isoformat(),
@@ -542,7 +540,7 @@ class VisionService:
         self,
         detected: DetectedProduct,
         fridge_id: int,
-        send_notification: bool = True,  # 🆕 Nouveau paramètre
+        send_notification: bool = True,  #  Nouveau paramètre
     ) -> Dict[str, Any]:
         """
         MODIFIÉ : Traite un produit détecté avec option de désactiver la notification
@@ -599,7 +597,6 @@ class VisionService:
 
         if existing_item:
             # MISE À JOUR d'un item existant
-            old_quantity = existing_item.quantity
             existing_item.quantity += detected.count
             existing_item.last_seen_at = now
 
@@ -609,17 +606,17 @@ class VisionService:
 
             try:
                 if existing_expiry is None:
-                    logger.info(f"  ➡️ Setting expiry_date (was None)")
+                    logger.info("   Setting expiry_date (was None)")
                     existing_item.expiry_date = new_expiry
                 elif isinstance(existing_expiry, date) and isinstance(new_expiry, date):
                     if new_expiry > existing_expiry:
                         logger.info(
-                            f"  ➡️ Updating expiry_date ({existing_expiry} -> {new_expiry})"
+                            f"   Updating expiry_date ({existing_expiry} -> {new_expiry})"
                         )
                         existing_item.expiry_date = new_expiry
                     else:
                         logger.info(
-                            f"  ➡️ Keeping existing expiry_date ({existing_expiry})"
+                            f"   Keeping existing expiry_date ({existing_expiry})"
                         )
                 else:
                     logger.warning(f"  Type mismatch, forcing update to {new_expiry}")
@@ -784,9 +781,9 @@ class VisionService:
         logger = logging.getLogger(__name__)
 
         detected_name = detected.product_name.strip()
-        logger.info(f"\n{'='*60}")
+        logger.info(f"\n{'=' * 60}")
         logger.info(f"🔍 PRODUCT MATCHING: '{detected_name}'")
-        logger.info(f"{'='*60}")
+        logger.info(f"{'=' * 60}")
 
         # Recherche avec scoring
         best_product, best_score = self._find_best_product_match(
@@ -821,7 +818,7 @@ class VisionService:
         self.db.flush()
 
         logger.info(f"Created: '{new_product.name}' (ID: {new_product.id})")
-        logger.info(f"{'='*60}\n")
+        logger.info(f"{'=' * 60}\n")
 
         return new_product
 

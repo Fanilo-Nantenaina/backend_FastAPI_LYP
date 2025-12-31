@@ -1,8 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List, Optional, Dict, Any
+from typing import List, Dict, Any
 from datetime import datetime
-from pydantic import BaseModel
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
@@ -18,7 +17,6 @@ from app.schemas.fridge import (
     KioskStatusResponse,
     FridgeResponse,
     FridgeUpdate,
-    UpdateFridgeInfoRequest,
     KioskInitRequest,
 )
 
@@ -47,13 +45,6 @@ def get_kiosk_by_device_id(
     device_id: str,
     db: Session = Depends(get_db),
 ):
-    """
-    NOUVELLE ROUTE : Récupère un kiosk par son device_id matériel
-
-    Permet au kiosk de se "restaurer" après effacement du cache
-    """
-    service = FridgeService(db)
-
     fridge = db.query(Fridge).filter(Fridge.device_id == device_id).first()
 
     if not fridge:

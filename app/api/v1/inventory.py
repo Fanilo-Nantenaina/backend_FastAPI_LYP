@@ -1,9 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import Optional
 from datetime import datetime, date, timedelta
-from pydantic import BaseModel
-from typing import Dict, Any
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user_optional
@@ -16,11 +14,9 @@ from app.models.event import Event
 from app.services.notification_service import NotificationService
 
 from app.schemas.inventory import (
-    InventoryItemResponse,
     InventoryItemCreate,
     InventoryItemUpdate,
     ConsumeItemRequest,
-    ConsumeBatchItem,
     ConsumeBatchRequest,
     ConsumeBatchResponse,
 )
@@ -44,7 +40,7 @@ def get_fridge_access_hybrid(
             .filter(
                 Fridge.id == fridge_id,
                 Fridge.kiosk_id == x_kiosk_id,
-                Fridge.is_paired == True,
+                Fridge.is_paired,
             )
             .first()
         )
@@ -218,7 +214,6 @@ def add_inventory_item(
     try:
         notification_service = NotificationService(db)
 
-        # Calculer le statut de fraîcheur
         freshness_status = "fresh"
         if expiry_date:
             from datetime import date
@@ -236,12 +231,12 @@ def add_inventory_item(
             action="added",
             product_name=product.name,
             quantity=request.quantity,
-            unit=item.unit if "item" in locals() else request.unit,
+            unit=product.unit if "item" in locals() else request.unit,
             freshness_status=freshness_status,
             expiry_date=expiry_date,
             source="manual",
         )
-        logger.info(f"Smart notification sent for product addition")
+        logger.info("Smart notification sent for product addition")
     except Exception as e:
         logger.error(f"Failed to send notification: {e}")
 
@@ -259,7 +254,7 @@ def add_inventory_item(
             not existing_item.expiry_date or expiry_date > existing_item.expiry_date
         ):
             logger.info(
-                f"Updating expiry date: " f"{existing_item.expiry_date} → {expiry_date}"
+                f"Updating expiry date: {existing_item.expiry_date} → {expiry_date}"
             )
             existing_item.expiry_date = expiry_date
 
@@ -545,7 +540,7 @@ def consume_item(
             freshness_status=freshness_status,
             expiry_date=item.expiry_date,
         )
-        logger.info(f"Smart notification sent for consumption")
+        logger.info("Smart notification sent for consumption")
     except Exception as e:
         logger.error(f"Failed to send notification: {e}")
 
@@ -644,7 +639,7 @@ def consume_items_batch(
     success_count = 0
     failed_count = 0
 
-    # 📦 COLLECTER les infos pour notification groupée
+    #  COLLECTER les infos pour notification groupée
     notification_products = []
 
     for item_req in request.items:
@@ -723,7 +718,7 @@ def consume_items_batch(
             )
             db.add(event)
 
-            # 📦 COLLECTER pour notification groupée (ne pas envoyer maintenant)
+            #  COLLECTER pour notification groupée (ne pas envoyer maintenant)
             notification_products.append(
                 {
                     "product_name": product.name if product else "Unknown",
@@ -775,7 +770,7 @@ def consume_items_batch(
                 f"Sent batch consume notification for {len(notification_products)} products"
             )
         except Exception as e:
-            logger.error(f"❌ Failed to send batch consume notification: {e}")
+            logger.error(f" Failed to send batch consume notification: {e}")
 
     return ConsumeBatchResponse(
         success_count=success_count,
